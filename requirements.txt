@@ -1,0 +1,11 @@
+ray[data,train,tune,serve]
+torch
+nbformat
+ipykernel
+ipywidgets
+matplotlib
+pandas
+pyarrow
+openpyxl
+click
+tqdm
