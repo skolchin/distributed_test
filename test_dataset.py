@@ -1,19 +1,52 @@
 import ray
+import click
 import numpy as np
+from urllib.parse import urlparse, urlunparse
 from typing import Dict
 
-ray.init()
+@click.command()
+@click.option('-a', '--address',
+              help='Ray cluster address or URL'
+                   '(use "ray://192.168.0.7:10001" for LAN cluser, skip to run locally)')
+@click.option('-s', '--shape', 'shape_str', default='1000,1000', show_default=True,
+              help='Random array shape (one or more comma-separated dimensions)',)
+def main(
+    address: str,
+    shape_str: str,
+):
+    """ Ray testing script (datasets) """
 
-def compute(batch: Dict[str, np.ndarray]) -> Dict[str, np.ndarray]:
-    x = np.random.rand()
-    data = batch['data']
-    print(f'Computing: array{data.shape} * {x}')
-    return {'data': data * x}
+    if not address:
+        print('Using local Ray instance')
+    else:
+        ps = urlparse(address, scheme='ray', allow_fragments=False)
+        if not ps.port:
+            ps = ps._replace(port=1001)
+        address = urlunparse(ps)
+        print(f'Will use Ray cluster at {address}')
 
-data = ray.data.from_numpy(np.random.uniform(0, 1, size=(10, 1000)))
+    ray.init(
+        address=address,
+        log_to_driver=True,
+        runtime_env={
+            "env_vars": {"RAY_DEBUG": "1"}, 
+        }
+    )
 
-print(f'Source sample: {next(iter(data.iter_batches(batch_size=10)))["data"][0][:10]}')
+    def compute(batch: Dict[str, np.ndarray]) -> Dict[str, np.ndarray]:
+        x = np.random.rand()
+        data = batch['data']
+        print(f'Computing: array{data.shape} * {x}')
+        return {'data': data * x}
 
-result = data.map_batches(compute)
+    shape = tuple([int(x.strip()) for x in shape_str.split(',')])
+    print(f'Source shape is {shape}')
 
-print(f'Result sample: {next(iter(result.iter_batches(batch_size=10)))["data"][0][:10]}')
+    data = ray.data.from_numpy(np.random.uniform(0, 1, shape))
+    print(f'Source sample: {next(iter(data.iter_batches(batch_size=10)))["data"][0][:10]}')
+
+    result = data.map_batches(compute)
+    print(f'Result sample: {next(iter(result.iter_batches(batch_size=10)))["data"][0][:10]}')
+
+if __name__ == '__main__':
+    main()
