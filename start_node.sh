@@ -4,4 +4,6 @@ if [ $# -ne 1 ]; then
 else
     ray start --address=${1}:6379 --num-cpus=1 --resources='{"custom-resource": 1}'
 fi
-echo "Use `ray stop` to stop the node"
+
+echo ""
+echo "Use 'ray stop' to stop the node"

@@ -1,23 +1,25 @@
 #!/bin/bash
+rm -f nohup.out
+
 if [ $# -ne 1 ]; then
     echo "Starting cluster locally"
 
     ray start \
         --num-cpus 1 \
-        --node-manager-port 43403 \
         --head \
         --verbose
+
 else
     echo "Starting cluster at ${1}"
 
     ray start \
         --num-cpus 1 \
         --node-ip-address=${1} \
-        --node-manager-port 43403 \
         --dashboard-host 0.0.0.0 \
         --head \
         --verbose
 
 fi
 
-echo "Use `ray stop` to stop the cluster"
+echo ""
+echo "Use 'ray stop' to stop the cluster"
