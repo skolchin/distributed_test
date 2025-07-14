@@ -14,7 +14,8 @@ else
 
     ray start \
         --num-cpus 1 \
-        --node-ip-address=${1} \
+        --node-ip-address=$1 \
+        --node-manager-port 43403 \
         --dashboard-host 0.0.0.0 \
         --head \
         --verbose
