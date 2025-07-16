@@ -19,7 +19,8 @@ else
         --object-manager-port 43404 \
         --runtime-env-agent-port 43405 \
         --dashboard-agent-grpc-port 43406 \
-        --metrics-export-port 43407 \
+        --dashboard-agent-listen-port 43407 \
+        --metrics-export-port 43408 \
         --dashboard-host 0.0.0.0 \
         --head \
         --verbose
