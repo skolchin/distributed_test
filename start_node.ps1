@@ -1,5 +1,6 @@
 param (
-    [string]$Address
+    [string]$Address,
+    [string]$NodeAddress = $Address  # Defaults to $Address if not provided
 )
 
 if (-not $Address) {
@@ -11,10 +12,11 @@ if (-not $Address) {
         --verbose
 }
 else {
-    Write-Output "Starting node at $Address"
+    Write-Output "Starting node at $Address (NodeAddress: $NodeAddress)"
 
     ray start `
         --address "${Address}:6379" `
+        --node-ip-address $NodeAddress `
         --node-ip-address ${Address} `
         --num-cpus 1 `
         --resources '{\"custom-resource\": 1}' `
