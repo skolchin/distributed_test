@@ -15,14 +15,13 @@ else {
 
     ray start `
         --address "${Address}:6379" `
+        --node-ip-address ${Address} `
         --num-cpus 1 `
         --resources '{\"custom-resource\": 1}' `
-        --node-manager-port 43403 `
-        --object-manager-port 43404 `
-        --runtime-env-agent-port 43405 `
-        --dashboard-agent-grpc-port 43406 `
-        --dashboard-agent-listen-port 43407 `
-        --metrics-export-port 43408 `
+        --node-manager-port 44403 `
+        --object-manager-port 44404 `
+        --runtime-env-agent-port 44405 `
+        --metrics-export-port 44406 `
         --verbose
 }
 
