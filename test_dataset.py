@@ -6,8 +6,8 @@ from typing import Dict
 
 @click.command()
 @click.option('-a', '--address',
-              help='Ray cluster address or URL'
-                   '(use "ray://192.168.0.7:10001" for LAN cluser, skip to run locally)')
+              help='Ray cluster address'
+                   '(use "192.168.0.7:10001" for LAN cluser, skip to run locally)')
 @click.option('-s', '--shape', 'shape_str', default='1000,1000', show_default=True,
               help='Random array shape (one or more comma-separated dimensions)',)
 def main(
@@ -19,10 +19,8 @@ def main(
     if not address:
         print('Using local Ray instance')
     else:
-        ps = urlparse(address, scheme='ray', allow_fragments=False)
-        if not ps.port:
-            ps = ps._replace(port=1001)
-        address = urlunparse(ps)
+        if not address.partition(':')[2]:
+            address = address + ':10001'
         print(f'Will use Ray cluster at {address}')
 
     ray.init(
