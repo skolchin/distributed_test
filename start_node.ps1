@@ -12,7 +12,7 @@ if (-not $Address) {
         --verbose
 }
 else {
-    Write-Output "Starting node at $Address (NodeAddress: $NodeAddress)"
+    Write-Output "Starting node with cluster at $Address (node address is $NodeAddress)"
 
     ray start `
         --address "${Address}:6379" `
