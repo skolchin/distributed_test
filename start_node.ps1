@@ -17,7 +17,6 @@ else {
     ray start `
         --address "${Address}:6379" `
         --node-ip-address $NodeAddress `
-        --node-ip-address ${Address} `
         --num-cpus 1 `
         --resources '{\"custom-resource\": 1}' `
         --node-manager-port 44403 `
