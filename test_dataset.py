@@ -1,13 +1,12 @@
 import ray
 import click
 import numpy as np
-from urllib.parse import urlparse, urlunparse
 from typing import Dict
 
 @click.command()
 @click.option('-a', '--address',
               help='Ray cluster address'
-                   '(use "192.168.0.7:10001" for LAN cluser, skip to run locally)')
+                   '(use "192.168.0.7:6379" for LAN cluser, skip to run locally)')
 @click.option('-s', '--shape', 'shape_str', default='1000,1000', show_default=True,
               help='Random array shape (one or more comma-separated dimensions)',)
 def main(
@@ -20,7 +19,7 @@ def main(
         print('Using local Ray instance')
     else:
         if not address.partition(':')[2]:
-            address = address + ':10001'
+            address = address + ':6379'
         print(f'Will use Ray cluster at {address}')
 
     ray.init(
