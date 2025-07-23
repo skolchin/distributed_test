@@ -1,4 +1,5 @@
 #!/bin/bash
+
 if [ $# -ne 1 ]; then
     echo "Starting node locally"
     ray start \
@@ -7,18 +8,18 @@ if [ $# -ne 1 ]; then
         --node-manager-port 43403 \
         --verbose
 else
-    echo "Starting node at ${1}"
+    echo "Starting node with cluster at ${1}"
 
     ray start \
         --address=${1}:6379 \
         --num-cpus=1 \
         --resources='{"custom-resource": 1}' \
-        --node-manager-port 43403 \
-        --object-manager-port 43404 \
-        --runtime-env-agent-port 43405 \
-        --dashboard-agent-grpc-port 43406 \
-        --dashboard-agent-listen-port 43407 \
-        --metrics-export-port 43408 \
+        --node-manager-port 44403 \
+        --object-manager-port 44404 \
+        --runtime-env-agent-port 44405 \
+        --dashboard-agent-grpc-port 44406 \
+        --dashboard-agent-listen-port 44407 \
+        --metrics-export-port 44408 \
         --verbose
 
 fi
