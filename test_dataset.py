@@ -1,5 +1,6 @@
 import ray
 import click
+import torch
 import numpy as np
 from typing import Dict
 
@@ -13,7 +14,7 @@ from typing import Dict
               help='Batch size (0 for whole batch processing)',)
 @click.option('-n', '--concurrency', type=int, default=0, show_default=True,
               help='Concurrency RAY parameter (0 for default)',)
-@click.option('-c', '--cpu', 'num_cpus', type=int, default=1, show_default=True,
+@click.option('-c', '--cpu', 'num_cpus', type=int, default=0, show_default=True,
               help='Number of CPUs reserved for each worker',)
 @click.option('-g', '--gpu', 'num_gpus', type=int, default=0, show_default=True,
               help='Number of GPUs reserved for each worker',)
@@ -46,8 +47,12 @@ def main(
         x = np.random.rand()
         data = batch['data']
         print(f'Executing as job {ray.get_runtime_context().get_job_id()} at {ray._private.services.get_node_ip_address()}') # type:ignore
-        print(f'Computing batch: array{data.shape} * {x}')
-        return {'data': data * x}
+        if num_gpus > 0:
+            print(f'Computing batch with GPU: array{data.shape} * {x}')
+            return {'data': (torch.from_numpy(data).cuda() * x).cpu().numpy()}
+        else:
+            print(f'Computing batch with CPU: array{data.shape} * {x}')
+            return {'data': data * x}
 
     shape = tuple([int(x.strip()) for x in shape_str.split(',')])
     print(f'Source shape is {shape}')

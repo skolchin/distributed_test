@@ -10,3 +10,4 @@ openpyxl
 click
 tqdm
 upnp
+pynvml
