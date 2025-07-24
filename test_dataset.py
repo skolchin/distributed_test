@@ -2,22 +2,25 @@ import ray
 import click
 import torch
 import numpy as np
+from time import sleep
 from typing import Dict
+from colorama import Fore, Style
 
 @click.command()
 @click.option('-a', '--address',
               help='Ray cluster address'
                    '(use "192.168.0.7:6379" for LAN cluser, skip to run locally)')
-@click.option('-s', '--shape', 'shape_str', default='1000,1000', show_default=True,
-              help='Random array shape (one or more comma-separated dimensions)',)
+@click.option('-s', '--shape', 'shape_str', default='2,1000,1000', show_default=True,
+              help='Random array shape as one or more comma-separated dimensions.'
+                   'If number of dimensions is >2, highest one will be used to split by blocks')
 @click.option('-b', '--batch', 'batch_size', type=int, default=0, show_default=True,
               help='Batch size (0 for whole batch processing)',)
 @click.option('-n', '--concurrency', type=int, default=0, show_default=True,
-              help='Concurrency RAY parameter (0 for default)',)
+              help='Concurrency parameter (0 for default)')
 @click.option('-c', '--cpu', 'num_cpus', type=int, default=0, show_default=True,
-              help='Number of CPUs reserved for each worker',)
+              help='Number of CPUs reserved for each worker (0 for default)')
 @click.option('-g', '--gpu', 'num_gpus', type=int, default=0, show_default=True,
-              help='Number of GPUs reserved for each worker',)
+              help='Number of GPUs reserved for each worker (0 for default)')
 def main(
     address: str,
     shape_str: str,
@@ -44,22 +47,36 @@ def main(
     )
 
     def compute(batch: Dict[str, np.ndarray]) -> Dict[str, np.ndarray]:
+        print(f'Executing as job {ray.get_runtime_context().get_job_id()} '
+              f'at {Fore.GREEN}{ray._private.services.get_node_ip_address()}{Style.RESET_ALL}') # type:ignore
+        
         x = np.random.rand()
         data = batch['data']
-        print(f'Executing as job {ray.get_runtime_context().get_job_id()} at {ray._private.services.get_node_ip_address()}') # type:ignore
+
         if num_gpus > 0:
             print(f'Computing batch with GPU: array{data.shape} * {x}')
-            return {'data': (torch.from_numpy(data).cuda() * x).cpu().numpy()}
+            result = (torch.from_numpy(data).cuda() * x).cpu().numpy()
         else:
             print(f'Computing batch with CPU: array{data.shape} * {x}')
-            return {'data': data * x}
+            result = data * x
+
+        return { 'data': result }
 
     shape = tuple([int(x.strip()) for x in shape_str.split(',')])
-    print(f'Source shape is {shape}')
+    if len(shape) <= 2:
+        np_data = np.random.uniform(0, 1, shape)
+        print(f'Source shape is {shape}')
+        print(f'Source sample: {np_data.flatten()[:10]}')
+    else:
+        num_blocks, shape = shape[0], shape[1:]
+        print(f'Source shape is {num_blocks}x{shape}')
+        np_data = [np.random.uniform(0, 1, shape) for _ in range(num_blocks)]
+        print(f'Source sample: {np_data[0].flatten()[:10]}')
 
-    data = ray.data.from_numpy(np.random.uniform(0, 1, shape))
-    print(f'Source sample: {next(iter(data.iter_batches(batch_size=10)))["data"][0][:10]}')
+    if num_gpus and not batch_size:
+        batch_size = shape[1] if len(shape) > 1 else 100
 
+    data = ray.data.from_numpy(np_data)
     result = data.map_batches(
         compute,
         batch_format='numpy',
@@ -68,8 +85,11 @@ def main(
         num_cpus=float(num_cpus) if num_cpus > 0 else None,
         num_gpus=float(num_gpus) if num_gpus > 0 else None,
         zero_copy_batch=True,
-    )
-    print(f'Result sample: {next(iter(result.iter_batches(batch_size=10)))["data"][0][:10]}')
+        scheduling_strategy='SPREAD',
+    ).take_all()
+
+    print(f'Result shape is {len(result)}x{result[0]["data"].shape}')
+    print(f'Result sample: {result[0]["data"][:10]}')
 
 if __name__ == '__main__':
     main()

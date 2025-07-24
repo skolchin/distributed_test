@@ -13,7 +13,6 @@ else
     echo "Starting cluster at ${1}"
 
     ray start \
-        --num-cpus 1 \
         --node-ip-address=$1 \
         --node-manager-port 43403 \
         --object-manager-port 43404 \

@@ -5,14 +5,13 @@ if [ $# -ne 1 ]; then
     ray start \
         --num-cpus=1 \
         --resources='{"custom-resource": 1}' \
-        --node-manager-port 43403 \
+        --node-manager-port 44403 \
         --verbose
 else
     echo "Starting node with cluster at ${1}"
 
     ray start \
         --address=${1}:6379 \
-        --num-cpus=1 \
         --resources='{"custom-resource": 1}' \
         --node-manager-port 44403 \
         --object-manager-port 44404 \

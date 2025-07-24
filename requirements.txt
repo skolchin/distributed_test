@@ -9,5 +9,6 @@ pyarrow
 openpyxl
 click
 tqdm
-upnp
+miniupnp
 pynvml
+colorama
