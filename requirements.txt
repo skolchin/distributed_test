@@ -1,5 +1,6 @@
 ray[data,train,tune,serve]==2.44.1
 torch
+torchvision
 nbformat
 ipykernel
 ipywidgets
@@ -12,3 +13,5 @@ tqdm
 miniupnp
 pynvml
 colorama
+torchmetrics
+pytorch_lightning

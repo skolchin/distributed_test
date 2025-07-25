@@ -20,9 +20,10 @@ else
         --dashboard-agent-grpc-port 43406 \
         --dashboard-agent-listen-port 43407 \
         --metrics-export-port 43408 \
-        --dashboard-host 0.0.0.0 \
         --head \
         --verbose
+
+        # --dashboard-host 0.0.0.0 \
 
 fi
 

@@ -12,7 +12,7 @@ def main():
     parser.add_argument(
         "-a",
         "--host",
-        default="95.31.13.220",
+        default="95.31.13.220:8265",
         help="Remote host name with optional port (default: %(default)s)"
     )
     parser.add_argument(
