@@ -10,7 +10,7 @@ pyarrow
 openpyxl
 click
 tqdm
-miniupnp
+miniupnpc
 pynvml
 colorama
 torchmetrics
