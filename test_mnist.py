@@ -1,118 +1,57 @@
-# Original Code here:
-# https://github.com/pytorch/examples/blob/master/mnist/main.py
-
+# patches: 
+#
+# .venv/lib/python3.12/site-packages/ray/train/_internal/session.py:950
+#       return session.world_size
+#           ->
+#       return session.world_size or 0
+#
+# .venv/lib/python3.12/site-packages/ray/train/_internal/session.py:989
+#       return session.world_rank
+#           ->
+#       return session.world_rank or 0
 import os
 import ray
 import click
 import torch
 import tempfile
-import torch.nn as nn
 import torch.optim as optim
-import torch.nn.functional as F
-
 from ray import tune
-from filelock import FileLock
 from ray.tune import Checkpoint
 from colorama import Fore, Style
-from torchvision import datasets, transforms
 from ray.tune.schedulers import AsyncHyperBandScheduler
+from ray.train.torch import prepare_model, prepare_data_loader
 
-# Change these values if you want the training to run quicker or slower.
-EPOCH_SIZE = 512
-TEST_SIZE = 256
+from mnist import ConvNet, get_device, get_data_loaders, train_mnist, test_mnist
 
+def job_func(config: dict):
 
-class ConvNet(nn.Module):
-    def __init__(self):
-        super(ConvNet, self).__init__()
-        self.conv1 = nn.Conv2d(1, 3, kernel_size=3)
-        self.fc = nn.Linear(192, 10)
-
-    def forward(self, x):
-        x = F.relu(F.max_pool2d(self.conv1(x), 3))
-        x = x.view(-1, 192)
-        x = self.fc(x)
-        return F.log_softmax(x, dim=1)
-
-
-def train_func(model, optimizer, train_loader, device=None):
-    device = device or torch.device("cpu")
-    model.train()
-    for batch_idx, (data, target) in enumerate(train_loader):
-        if batch_idx * len(data) > EPOCH_SIZE:
-            return
-        data, target = data.to(device), target.to(device)
-        optimizer.zero_grad()
-        output = model(data)
-        loss = F.nll_loss(output, target)
-        loss.backward()
-        optimizer.step()
-
-def test_func(model, data_loader, device=None):
-    device = device or torch.device("cpu")
-    model.eval()
-    correct = 0
-    total = 0
-    with torch.no_grad():
-        for batch_idx, (data, target) in enumerate(data_loader):
-            if batch_idx * len(data) > TEST_SIZE:
-                break
-            data, target = data.to(device), target.to(device)
-            outputs = model(data)
-            _, predicted = torch.max(outputs.data, 1)
-            total += target.size(0)
-            correct += (predicted == target).sum().item()
-
-    return correct / total
-
-
-def get_data_loaders(batch_size=64):
-    mnist_transforms = transforms.Compose(
-        [transforms.ToTensor(), transforms.Normalize((0.1307,), (0.3081,))]
-    )
-
-    # We add FileLock here because multiple workers will want to
-    # download data, and this may cause overwrites since
-    # DataLoader is not threadsafe.
-    with FileLock(os.path.expanduser("~/data.lock")):
-        train_loader = torch.utils.data.DataLoader(
-            datasets.MNIST(
-                "~/data", train=True, download=True, transform=mnist_transforms
-            ),
-            batch_size=batch_size,
-            shuffle=True,
-        )
-        test_loader = torch.utils.data.DataLoader(
-            datasets.MNIST(
-                "~/data", train=False, download=True, transform=mnist_transforms
-            ),
-            batch_size=batch_size,
-            shuffle=True,
-        )
-    return train_loader, test_loader
-
-
-def train_mnist(config):
     print(f'Executing as job {ray.get_runtime_context().get_job_id()} '
             f'at {Fore.GREEN}{ray._private.services.get_node_ip_address()}{Style.RESET_ALL}') # type:ignore
 
-    should_checkpoint = config.get("should_checkpoint", False)
-    use_cuda = torch.cuda.is_available()
-    device = torch.device("cuda" if use_cuda else "cpu")
-    train_loader, test_loader = get_data_loaders()
-    model = ConvNet().to(device)
+    epochs = config['epochs']
+    batch_size = config['batch_size']
+    test_batch_size = config['test_batch_size']
+    log_interval = config['log_interval']
+    no_accel = config['no_accel']
+    save_checkpoint = config['save_checkpoint']
+    dry_run = config['dry_run']
+    lr = config["lr"]
 
-    optimizer = optim.SGD(
-        model.parameters(), lr=config["lr"], momentum=config["momentum"]
-    )
+    use_accel = not no_accel and torch.accelerator.is_available()
+    device = get_device(use_accel)
+    model = prepare_model(ConvNet().to(device), move_to_device=False, parallel_strategy='ddp')
+    train_loader, test_loader = get_data_loaders(batch_size, test_batch_size, use_accel)
+    train_loader = prepare_data_loader(train_loader)
+    test_loader = prepare_data_loader(test_loader)
+    optimizer = optim.Adadelta(model.parameters(), lr=lr)
 
-    while True:
-        train_func(model, optimizer, train_loader, device)
-        acc = test_func(model, test_loader, device)
-        metrics = {"mean_accuracy": acc}
+    for epoch in range(epochs):
+        train_mnist(model, device, train_loader, optimizer, epoch, log_interval, dry_run)
+        loss, acc = test_mnist(model, device, test_loader)
+        metrics = { "mean_accuracy": acc }
 
         # Report metrics (and possibly a checkpoint)
-        if should_checkpoint:
+        if save_checkpoint:
             with tempfile.TemporaryDirectory() as tempdir:
                 torch.save(model.state_dict(), os.path.join(tempdir, "model.pt"))
                 tune.report(metrics, checkpoint=Checkpoint.from_directory(tempdir))
@@ -124,17 +63,35 @@ def train_mnist(config):
 @click.option('-a', '--address',
               help='Ray cluster address'
                    '(use "192.168.0.7:6379" for LAN cluser, skip to run locally)')
-@click.option('-n', '--iter', 'num_iter', type=int, default=100, show_default=True,
-              help='Number of iterations')
 @click.option('-c', '--cpu', 'num_cpus', type=int, default=0, show_default=True,
-              help='Number of CPUs reserved for each worker (0 for default)')
+              help='Number of CPUs reserved for each worker (0 for no particular allocation)')
 @click.option('-g', '--gpu', 'num_gpus', type=int, default=0, show_default=True,
-              help='Number of GPUs reserved for each worker (0 for default)')
+              help='Number of GPUs reserved for each worker (0 for no particular allocation)')
+@click.option('-n', '--epochs', type=int, default=14, show_default=True,
+                    help='Number of epochs to train')
+@click.option('--batch-size', type=int, default=64, show_default=True,
+                    help='Input batch size for training')
+@click.option('--test-batch-size', type=int, default=1000, show_default=True,
+                    help='Input batch size for testing')
+@click.option('--no-accel', is_flag=True, 
+                    help='Disables accelerator')
+@click.option('--dry-run', is_flag=True,
+                    help='quickly check a single pass')
+@click.option('--save-model', is_flag=True,
+                    help='Save checkpoints')
+@click.option('--samples', type=int, default=10, show_default=True,
+                    help='Search space sampling count')
 def main(
     address: str,
-    num_iter: int,
     num_cpus: int,
     num_gpus: int,
+    epochs: int,
+    batch_size: int,
+    test_batch_size: int,
+    no_accel: bool,
+    dry_run: bool,
+    save_model: bool,
+    samples: int,
 ):
     """ Ray testing script (MNIST training) """
 
@@ -149,33 +106,48 @@ def main(
         address=address,
         log_to_driver=True,
         runtime_env={
-            "env_vars": {"RAY_DEBUG": "1"}, 
+            "env_vars": {"RAY_DEBUG": "1"},
         }
     )
 
-    # for early stopping
+    if no_accel:
+        num_cpus = num_cpus or 1
+        num_gpus = 0
+    elif not num_cpus and not num_gpus:
+        if no_accel: 
+            num_cpus = 1
+        else:
+            num_gpus = 1
+
     sched = AsyncHyperBandScheduler()
-    if not num_cpus and not num_gpus:
-        num_cpus = 1
     resources_per_trial = {"cpu": float(num_cpus), "gpu": float(num_gpus)}
     tuner = tune.Tuner(
-        tune.with_resources(train_mnist, resources=resources_per_trial),
+        tune.with_resources(
+            job_func,
+            resources=resources_per_trial
+        ),
         tune_config=tune.TuneConfig(
             metric="mean_accuracy",
             mode="max",
             scheduler=sched,
-            num_samples=50,
+            num_samples=samples,
         ),
         run_config=tune.RunConfig(
             name="exp",
             stop={
                 "mean_accuracy": 0.98,
-                "training_iteration": num_iter,
+                "training_iteration": epochs,
             },
         ),
         param_space={
-            "lr": tune.loguniform(1e-4, 1e-2),
-            "momentum": tune.uniform(0.1, 0.9),
+            'epochs': epochs,
+            'batch_size': batch_size,
+            'test_batch_size': test_batch_size,
+            'no_accel': no_accel,
+            'log_interval': -1,
+            'dry_run': dry_run,
+            'save_checkpoint': save_model,
+            'lr': tune.loguniform(1e-4, 1e-2),
         },
     )
     tuner.fit()
