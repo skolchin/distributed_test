@@ -19,7 +19,7 @@ from ray import tune
 from ray.tune import Checkpoint
 from colorama import Fore, Style
 from ray.tune.schedulers import AsyncHyperBandScheduler
-from ray.train.torch import prepare_model, prepare_data_loader
+from ray.train.torch import prepare_model, prepare_data_loader, prepare_optimizer
 
 from mnist import ConvNet, get_device, get_data_loaders, train_mnist, test_mnist
 
@@ -41,14 +41,13 @@ def job_func(config: dict):
     device = get_device(use_accel)
     model = prepare_model(ConvNet().to(device), move_to_device=False, parallel_strategy='ddp')
     train_loader, test_loader = get_data_loaders(batch_size, test_batch_size, use_accel)
-    train_loader = prepare_data_loader(train_loader)
-    test_loader = prepare_data_loader(test_loader)
+    train_loader = prepare_data_loader(train_loader, move_to_device=False)
+    test_loader = prepare_data_loader(test_loader, move_to_device=False)
     optimizer = optim.Adadelta(model.parameters(), lr=lr)
 
     for epoch in range(epochs):
         train_mnist(model, device, train_loader, optimizer, epoch, log_interval, dry_run)
-        loss, acc = test_mnist(model, device, test_loader)
-        metrics = { "mean_accuracy": acc }
+        metrics = test_mnist(model, device, test_loader) | { 'epoch': epoch }
 
         # Report metrics (and possibly a checkpoint)
         if save_checkpoint:
@@ -76,10 +75,10 @@ def job_func(config: dict):
 @click.option('--no-accel', is_flag=True, 
                     help='Disables accelerator')
 @click.option('--dry-run', is_flag=True,
-                    help='quickly check a single pass')
+                    help='Quickly check a single pass')
 @click.option('--save-model', is_flag=True,
                     help='Save checkpoints')
-@click.option('--samples', type=int, default=10, show_default=True,
+@click.option('-s', '--samples', type=int, default=10, show_default=True,
                     help='Search space sampling count')
 def main(
     address: str,
@@ -119,7 +118,6 @@ def main(
         else:
             num_gpus = 1
 
-    sched = AsyncHyperBandScheduler()
     resources_per_trial = {"cpu": float(num_cpus), "gpu": float(num_gpus)}
     tuner = tune.Tuner(
         tune.with_resources(
@@ -127,17 +125,18 @@ def main(
             resources=resources_per_trial
         ),
         tune_config=tune.TuneConfig(
-            metric="mean_accuracy",
-            mode="max",
-            scheduler=sched,
             num_samples=samples,
+            scheduler=AsyncHyperBandScheduler(
+                metric='accuracy',
+                mode='max',
+                time_attr='epoch',
+            ),
         ),
         run_config=tune.RunConfig(
-            name="exp",
-            stop={
-                "mean_accuracy": 0.98,
-                "training_iteration": epochs,
-            },
+            name="mnist",
+            failure_config=tune.FailureConfig(
+                max_failures=1,
+            )
         ),
         param_space={
             'epochs': epochs,

@@ -19,11 +19,11 @@ from mnist import ConvNet, get_device, get_data_loaders, train_mnist, test_mnist
 @click.option('--no-accel', is_flag=True,
                     help='disables accelerator')
 @click.option('--dry-run', is_flag=True,
-                    help='quickly check a single pass')
+                    help='quickly check with a single pass')
 @click.option('--log-interval', type=int, default=10, metavar='N',
                     help='how many batches to wait before logging training status')
 @click.option('--save-model', is_flag=True, 
-                    help='For Saving the current Model')
+                    help='save the model')
 def main(
     epochs: int,
     batch_size: int,
@@ -44,8 +44,8 @@ def main(
     scheduler = StepLR(optimizer, step_size=1, gamma=gamma)
     for epoch in range(1, epochs + 1):
         train_mnist(model, device, train_loader, optimizer, epoch, log_interval, dry_run)
-        loss, acc = test_mnist(model, device, test_loader)
-        print(f'Test loss: {loss:.4f}, accuracy: {acc:.0f}%')
+        metrics = test_mnist(model, device, test_loader)
+        print(f'Test loss: {metrics["loss"]:.4f}, accuracy: {metrics["accuracy"]:.0f}%')
         
         scheduler.step()
 

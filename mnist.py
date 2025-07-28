@@ -97,7 +97,7 @@ def test_mnist(
         model: nn.Module, 
         device: torch.device, 
         test_loader: DataLoader
-    ) -> Tuple[float, float]:
+    ) -> Dict[str, float]:
 
     model.eval()
     test_loss = 0
@@ -114,5 +114,5 @@ def test_mnist(
     test_loss /= dataset_length
     acc = 100. * correct / dataset_length
 
-    return test_loss, acc
+    return { 'loss': test_loss, 'accuracy': acc }
 
