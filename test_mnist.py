@@ -9,6 +9,7 @@
 #       return session.world_rank
 #           ->
 #       return session.world_rank or 0
+#
 import os
 import ray
 import click
@@ -16,10 +17,11 @@ import torch
 import tempfile
 import torch.optim as optim
 from ray import tune
-from ray.tune import Checkpoint
 from colorama import Fore, Style
+from ray.tune.experimental.output import AirVerbosity
+from ray.tune.stopper import ExperimentPlateauStopper
 from ray.tune.schedulers import AsyncHyperBandScheduler
-from ray.train.torch import prepare_model, prepare_data_loader, prepare_optimizer
+from ray.train.torch import prepare_model, prepare_data_loader
 
 from mnist import ConvNet, get_device, get_data_loaders, train_mnist, test_mnist
 
@@ -34,8 +36,7 @@ def job_func(config: dict):
     log_interval = config['log_interval']
     no_accel = config['no_accel']
     save_checkpoint = config['save_checkpoint']
-    dry_run = config['dry_run']
-    lr = config["lr"]
+    lr = config['lr']
 
     use_accel = not no_accel and torch.accelerator.is_available()
     device = get_device(use_accel)
@@ -46,40 +47,38 @@ def job_func(config: dict):
     optimizer = optim.Adadelta(model.parameters(), lr=lr)
 
     for epoch in range(epochs):
-        train_mnist(model, device, train_loader, optimizer, epoch, log_interval, dry_run)
+        train_mnist(model, device, train_loader, optimizer, epoch, log_interval)
         metrics = test_mnist(model, device, test_loader) | { 'epoch': epoch }
 
         # Report metrics (and possibly a checkpoint)
         if save_checkpoint:
             with tempfile.TemporaryDirectory() as tempdir:
-                torch.save(model.state_dict(), os.path.join(tempdir, "model.pt"))
-                tune.report(metrics, checkpoint=Checkpoint.from_directory(tempdir))
+                torch.save(model.state_dict(), os.path.join(tempdir, 'model.pt'))
+                tune.report(metrics, checkpoint=tune.Checkpoint.from_directory(tempdir))
         else:
             tune.report(metrics)
 
 
 @click.command()
 @click.option('-a', '--address',
-              help='Ray cluster address'
-                   '(use "192.168.0.7:6379" for LAN cluser, skip to run locally)')
+                help='Ray cluster address'
+                     '(use `192.168.0.7:6379` for LAN cluser, skip to run locally)')
 @click.option('-c', '--cpu', 'num_cpus', type=int, default=0, show_default=True,
-              help='Number of CPUs reserved for each worker (0 for no particular allocation)')
+                help='Number of CPUs reserved for each worker (0 for no particular allocation)')
 @click.option('-g', '--gpu', 'num_gpus', type=int, default=0, show_default=True,
-              help='Number of GPUs reserved for each worker (0 for no particular allocation)')
+                help='Number of GPUs reserved for each worker (0 for no particular allocation)')
 @click.option('-n', '--epochs', type=int, default=14, show_default=True,
-                    help='Number of epochs to train')
+                help='Number of epochs to train')
+@click.option('-j', '--jobs', type=int, default=10, show_default=True,
+                help='Number of tasks to start')
 @click.option('--batch-size', type=int, default=64, show_default=True,
-                    help='Input batch size for training')
+                help='Input batch size for training')
 @click.option('--test-batch-size', type=int, default=1000, show_default=True,
-                    help='Input batch size for testing')
+                help='Input batch size for testing')
 @click.option('--no-accel', is_flag=True, 
-                    help='Disables accelerator')
-@click.option('--dry-run', is_flag=True,
-                    help='Quickly check a single pass')
+                help='Disables accelerator')
 @click.option('--save-model', is_flag=True,
-                    help='Save checkpoints')
-@click.option('-s', '--samples', type=int, default=10, show_default=True,
-                    help='Search space sampling count')
+                help='Save checkpoints')
 def main(
     address: str,
     num_cpus: int,
@@ -88,11 +87,10 @@ def main(
     batch_size: int,
     test_batch_size: int,
     no_accel: bool,
-    dry_run: bool,
     save_model: bool,
-    samples: int,
+    jobs: int,
 ):
-    """ Ray testing script (MNIST training) """
+    """ MNIST training with Ray """
 
     if not address:
         print('Using local Ray instance')
@@ -105,7 +103,10 @@ def main(
         address=address,
         log_to_driver=True,
         runtime_env={
-            "env_vars": {"RAY_DEBUG": "1"},
+            'env_vars': {
+                'RAY_DEBUG': '1',
+                'RAY_DEDUP_LOGS': '0',
+            },
         }
     )
 
@@ -118,24 +119,32 @@ def main(
         else:
             num_gpus = 1
 
-    resources_per_trial = {"cpu": float(num_cpus), "gpu": float(num_gpus)}
     tuner = tune.Tuner(
         tune.with_resources(
             job_func,
-            resources=resources_per_trial
+            resources={
+                'cpu': float(num_cpus), 
+                'gpu': float(num_gpus)
+            },
         ),
         tune_config=tune.TuneConfig(
-            num_samples=samples,
+            metric='accuracy',
+            mode='max',
+            num_samples=jobs,
             scheduler=AsyncHyperBandScheduler(
-                metric='accuracy',
-                mode='max',
                 time_attr='epoch',
             ),
         ),
         run_config=tune.RunConfig(
-            name="mnist",
+            name='mnist',
+            verbose=AirVerbosity.VERBOSE,
             failure_config=tune.FailureConfig(
                 max_failures=1,
+            ),
+            stop=ExperimentPlateauStopper(
+                metric='accuracy',
+                mode='max',
+                patience=5,
             )
         ),
         param_space={
@@ -144,12 +153,14 @@ def main(
             'test_batch_size': test_batch_size,
             'no_accel': no_accel,
             'log_interval': -1,
-            'dry_run': dry_run,
             'save_checkpoint': save_model,
             'lr': tune.loguniform(1e-4, 1e-2),
         },
     )
-    tuner.fit()
+    results = tuner.fit()
+    best_result = results.get_best_result()
+    assert best_result.metrics
+    print(f'Best trial: loss {best_result.metrics["loss"]:.4f}, accuracy {best_result.metrics["accuracy"]:.2f}%')
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     main()

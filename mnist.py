@@ -1,3 +1,4 @@
+import os
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -7,6 +8,7 @@ from torchvision import datasets, transforms
 from typing import Dict, Any, Tuple
 
 class ConvNet(nn.Module):
+    """ Simple CNN """
     def __init__(self):
         super(ConvNet, self).__init__()
         self.conv1 = nn.Conv2d(1, 32, 3, 1)
@@ -32,6 +34,7 @@ class ConvNet(nn.Module):
         return output
 
 def get_device(use_accel: bool) -> torch.device:
+    """ Get Torch device """
     device: torch.device | None = None
     if use_accel:
         device = torch.accelerator.current_accelerator()
@@ -39,12 +42,14 @@ def get_device(use_accel: bool) -> torch.device:
         device = torch.device("cpu")
     return device
 
-
 def get_data_loaders(
         train_batch_size: int, 
         test_batch_size: int,
-        use_accel: bool = True
+        use_accel: bool = True,
+        root_dir: str = '~',
     ) -> Tuple[DataLoader, DataLoader]:
+    """ Setup MNIST data loaders """
+
     train_kwargs: Dict[str, Any] = {'batch_size': train_batch_size}
     test_kwargs: Dict[str, Any]  = {'batch_size': test_batch_size}
     if use_accel:
@@ -61,15 +66,18 @@ def get_data_loaders(
         transforms.ToTensor(),
         transforms.Normalize((0.1307,), (0.3081,))
     ])
-    dataset1 = datasets.MNIST('../data', train=True, download=True,
+
+    data_path = os.path.join(os.path.expanduser(root_dir), '.cache', 'torch')
+    os.makedirs(data_path, exist_ok=True)
+
+    dataset1 = datasets.MNIST(data_path, train=True, download=True,
                        transform=transform)
-    dataset2 = datasets.MNIST('../data', train=False,
+    dataset2 = datasets.MNIST(data_path, train=False,
                        transform=transform)
     train_loader = DataLoader(dataset1, **train_kwargs)
     test_loader = DataLoader(dataset2, **test_kwargs)
 
     return train_loader, test_loader
-
 
 def train_mnist(
         model: nn.Module, 
@@ -79,6 +87,7 @@ def train_mnist(
         epoch: int, 
         log_interval: int = 10, 
         dry_run: bool = False):
+    """ Train a model """
     
     model.train()
     for batch_idx, (data, target) in enumerate(train_loader):
@@ -96,8 +105,9 @@ def train_mnist(
 def test_mnist(
         model: nn.Module, 
         device: torch.device, 
-        test_loader: DataLoader
+        test_loader: DataLoader,
     ) -> Dict[str, float]:
+    """ Test a model """
 
     model.eval()
     test_loss = 0
@@ -115,4 +125,3 @@ def test_mnist(
     acc = 100. * correct / dataset_length
 
     return { 'loss': test_loss, 'accuracy': acc }
-
