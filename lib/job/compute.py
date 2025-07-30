@@ -1,6 +1,8 @@
 import ray
 import numpy as np
-from lib.job.base import Job, JobRuntimeInfo, JobResult
+from lib.job.job import Job
+from lib.job.types import JobRuntimeInfo
+from lib.job.job_instance import JobInstance
 from typing import ClassVar, Tuple, override, Dict, Any, List
 
 class ComputeJob(Job):
@@ -24,10 +26,14 @@ class ComputeJob(Job):
             'scheduling_strategy': 'SPREAD',
         }
         @ray.remote(**remote_kwargs)
-        def cpu_compute(batch: np.ndarray) -> JobResult:
+        def cpu_compute(batch: np.ndarray) -> JobInstance:
             x = np.random.rand()
-            return JobResult.from_output(
+            return JobInstance.from_output(
                 parent=self,
+                kwargs={
+                    'num_batches': self.num_batches,
+                    'shape': self.shape,
+                },
                 output=batch*x)
         
         return cpu_compute.remote(data) if self.num_batches <= 1 else \
@@ -46,12 +52,16 @@ class GPUComputeJob(ComputeJob):
             'scheduling_strategy': 'SPREAD',
         }
         @ray.remote(**remote_kwargs)
-        def gpu_compute(batch: np.ndarray) -> JobResult:
+        def gpu_compute(batch: np.ndarray) -> JobInstance:
             x = torch.rand(1).cuda()
             y = torch.from_numpy(batch).cuda()
             z = (x * y).cpu().detach().numpy()
-            return JobResult.from_output(
+            return JobInstance.from_output(
                 parent=self,
+                kwargs={
+                    'num_batches': self.num_batches,
+                    'shape': self.shape,
+                },
                 output=z
             )
 

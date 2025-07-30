@@ -8,3 +8,6 @@ class BackendOptions(BaseSettings):
     cluster_address: str
     """ Cluster IP address or domain name """
 
+    sqlite_file_name: str = "./data/db.db"
+    """ Database name"""
+

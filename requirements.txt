@@ -18,6 +18,7 @@ miniupnpc
 # fastapi
 fastapi[standard]
 pydantic_settings
+sqlmodel
 
 # misc
 tqdm

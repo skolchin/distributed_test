@@ -1,8 +1,9 @@
 from uuid import uuid4
 from pydantic import BaseModel, Field, ConfigDict
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Sequence
 
-from lib.job.base import JobResult
+from lib.job.job import Job
+from lib.job.job_instance import JobInstance
 
 class ClusterStatusResponse(BaseModel):
     """ Cluster status response """
@@ -44,8 +45,8 @@ class JobSubmitRequest(BaseModel):
 
     model_config = ConfigDict(extra='allow')
 
-class JobResultResponse(BaseModel):
+class JobInstanceResponse(BaseModel):
     """ List of jobs result response """
-    job_results: List[JobResult] = Field(default_factory=list)
-    as_background: bool = False
+    jobs: Sequence[Job] = Field(default_factory=list)
+    job_instances: Sequence[JobInstance] = Field(default_factory=list)
 

@@ -1,23 +1,23 @@
 import ray
 import logging
+from datetime import datetime
+from sqlmodel import Session, select
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import JSONResponse, HTMLResponse
 from fastapi import (
-    Form,
     status,
     FastAPI,
     Depends,
     Request,
-    Response,
-    Security,
     WebSocket,
     HTTPException,
-    WebSocketException,
     BackgroundTasks,
 )
 from lib.state import lifespan, BackendState
-from lib.job.base import Job, JobResult
+from lib.job.job import Job
+from lib.job.job_instance import JobInstance
 from lib.types import *
+from typing import cast
 
 logging.basicConfig(
     format='[%(levelname).1s %(asctime)s %(name)s] %(message)s', 
@@ -46,7 +46,6 @@ async def get_index(
     state: BackendState = Depends(get_state_from_request)
 ) -> HTMLResponse:
     """ Generate index.html from template """
-
     return state.templates.TemplateResponse(
         request=request, 
         name='index.html', 
@@ -112,28 +111,61 @@ async def get_node_status(
 async def get_job_types_list(
     state: BackendState = Depends(get_state_from_request)
 ) -> JSONResponse:
+    """ Retrieve available job types """
     return JSONResponse({'job_types': list(state.job_types.keys())})
 
 @app.get('/job/list', tags=['job'], operation_id='list_jobs')
 async def get_job_list(
     state: BackendState = Depends(get_state_from_request)
-) -> JobResultResponse:
-    raise HTTPException(status.HTTP_501_NOT_IMPLEMENTED, detail='Not implemented')
+) -> JobInstanceResponse:
+    """ Retrieve list of jobs """
+    with Session(state.engine) as session:
+        job_instances = session.exec(select(JobInstance)).all()
+        if not job_instances:
+            jobs = {}
+        else:
+            jobs = {}
+            for j in job_instances:
+                if not j.job_id in jobs:
+                    job_type = state.job_types[j.job_type]
+                    jobs[j.job_id] = job_type['job_cls'](
+                        job_id=job_instances[0].job_id,
+                    )
+        return JobInstanceResponse(
+            jobs=list(jobs.values()),
+            job_instances=job_instances,
+        )
 
 @app.get('/job', tags=['job'], operation_id='get_job_info')
 async def get_job_info(
     job_id: str,
     state: BackendState = Depends(get_state_from_request)
-) -> JobResultResponse:
-    raise HTTPException(status.HTTP_501_NOT_IMPLEMENTED, detail='Not implemented')
+) -> JobInstanceResponse:
+    """ Retrieve single job info """
+    with Session(state.engine) as session:
+        job_instances=session.exec(select(JobInstance).where(JobInstance.job_id == job_id)).all()
+        if not job_instances:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, f'Job {job_id} not found')
+
+        job_type = state.job_types[job_instances[0].job_type]
+        job = job_type['job_cls'](
+            job_id=job_instances[0].job_id,
+        )
+        return JobInstanceResponse(
+            jobs=[job],
+            job_instances=job_instances,
+        )
 
 @app.post('/job', tags=['job'], operation_id='submit_job')
 async def submit_job(
     request: JobSubmitRequest,
+    background_tasks: BackgroundTasks,
     state: BackendState = Depends(get_state_from_request),
-) -> JobResultResponse:
+) -> JobInstanceResponse:
+    """ Submit new job """
+    
     if not request.job_type in state.job_types:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, detail='Unknown job type')
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail=f'Unknown job type {request.job_type}')
     
     job_info = state.job_types[request.job_type]
     logger.info(f'Launching job type {request.job_type} of {job_info["job_cls"]}')
@@ -144,51 +176,79 @@ async def submit_job(
     job = job_info['job_cls'](**job_kwargs)
     logger.info(f'Job ID is {job.job_id}')
 
-    as_background = request.as_background and job.supports_background
-    async with state.connection:
-        input = job.setup()
-        if not as_background:
-            # synchronous run, hang up until task is completed
-            # TODO: add timeout
-            result = job.run(**(input or {}))
+    async def run_job(job: Job):
+        async with state.connection:
+            input = job.setup()
+            task_result = job.run(**(input or {}))
             logger.info(f'Job {job.job_id} has successfully finished')
-        else:
-            # asynchronous run, doesn't care about task results
-            # TODO: add some result retrieval mechanizm
-            futures = job.start(**(input or {}))
-            result = None
-            logger.info(f'Job {job.job_id} has started as background task')
+        return task_result
 
-        match result:
-            case JobResult():
-                return JobResultResponse(
-                    job_results=[result], 
-                    as_background=as_background)
-            case tuple() | list() if not len(result):
-                return JobResultResponse(
-                    job_results=[], 
-                    as_background=as_background)
-            case tuple() | list() if isinstance(result[0], JobResult):
-                return JobResultResponse(
-                    job_results=result,     #type:ignore
-                    as_background=as_background)
+    def task_result_to_job_results(
+            job: Job, 
+            task_result, 
+            placeholders: List[JobInstance] | None = None,
+            is_background: bool = False,
+            mark_finished: bool = True) -> List[JobInstance]:
+        
+        match task_result:
+            case JobInstance():
+                job_results=[task_result]
+            case tuple() | list() if not len(task_result):
+                job_results=[]
+            case tuple() | list() if isinstance(task_result[0], JobInstance):
+                job_results=task_result
             case _:
-                return JobResultResponse(
-                    job_results=[JobResult.from_job(job, output=result)], 
-                    as_background=as_background)
+                job_results=[JobInstance.from_job(job, output=task_result)]
 
-@app.post('/job/pause', tags=['job'], operation_id='pause_job')
-async def pause_job(
+        dt_now = datetime.now()
+        with Session(state.engine) as session:
+            for job_result in job_results:
+                job_result.is_background = is_background
+                if mark_finished:
+                    job_result.finished = dt_now
+                session.add(job_result)
+            for job_result in placeholders or []:
+                session.delete(job_result)
+            session.commit()
+            for job_result in job_results:
+                session.refresh(job_result)
+
+        return cast(List[JobInstance], job_results)
+
+    async def run_job_bg(job: Job, is_background: bool = False, placeholders: List[JobInstance] | None = None):
+        task_result = await run_job(job)
+        job_results = task_result_to_job_results(
+            job, 
+            task_result, 
+            placeholders=placeholders, 
+            is_background=is_background,
+            mark_finished=True)
+        return job_results
+
+    as_background = request.as_background and job.supports_background
+    if not as_background:
+        # synchronous run, hang up until task is completed
+        # TODO: add timeout
+        task_result = await run_job(job)
+        job_results = task_result_to_job_results(job, task_result, is_background=False, mark_finished=True)
+    else:
+        # save task placeholder
+        job_results = task_result_to_job_results(job, None, is_background=True, mark_finished=False)
+
+        # asynchronous run
+        background_tasks.add_task(run_job_bg, job=job, is_background=True, placeholders=job_results)
+        logger.info(f'Job {job.job_id} has started as a background task')
+
+    return JobInstanceResponse(
+        jobs=[job],
+        job_instances=job_results
+    )
+
+@app.post('/job/cancel', tags=['job'], operation_id='cancel_job')
+async def cancel_job(
     job_id: str,
     state: BackendState = Depends(get_state_from_request)
-) -> JobResultResponse:
-    raise HTTPException(status.HTTP_501_NOT_IMPLEMENTED, detail='Not implemented')
-
-@app.post('/job/resume', tags=['job'], operation_id='resume_job')
-async def resume_job(
-    job_id: str,
-    state: BackendState = Depends(get_state_from_request)
-) -> JobResultResponse:
+) -> JobInstanceResponse:
     raise HTTPException(status.HTTP_501_NOT_IMPLEMENTED, detail='Not implemented')
 
 @app.websocket('/job')
@@ -196,17 +256,7 @@ async def job_stream(
     websocket: WebSocket,
     state: BackendState = Depends(get_state_from_websocket),
 ):
-    await websocket.accept()
-    try:
-        while True:
-            msg = await websocket.receive_json()
-            await websocket.send_json(msg)
-
-    except Exception as ex:
-        # unrecoverable error, close the websocket
-        raise WebSocketException(status.WS_1011_INTERNAL_ERROR, str(ex))
-    finally:
-        await websocket.close()
+    raise HTTPException(status.HTTP_501_NOT_IMPLEMENTED, detail='Not implemented')
 
 #
 # Static files
