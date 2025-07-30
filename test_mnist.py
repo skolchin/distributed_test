@@ -23,7 +23,7 @@ from ray.tune.stopper import ExperimentPlateauStopper
 from ray.tune.schedulers import AsyncHyperBandScheduler
 from ray.train.torch import prepare_model, prepare_data_loader
 
-from mnist import ConvNet, get_device, get_data_loaders, train_mnist, test_mnist
+from lib.mnist import ConvNet, get_device, get_data_loaders, train_mnist, test_mnist
 
 def job_func(config: dict):
 

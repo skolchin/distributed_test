@@ -1,17 +1,29 @@
+# ray
 ray[data,train,tune,serve]==2.44.1
+pynvml
+
+# torch
 torch
 torchvision
+torchmetrics
+
+# jupyter
 nbformat
 ipykernel
 ipywidgets
-matplotlib
+
+# upnp
+miniupnpc
+
+# fastapi
+fastapi[standard]
+pydantic_settings
+
+# misc
+tqdm
+click
 pandas
 pyarrow
 openpyxl
-click
-tqdm
-miniupnpc
-pynvml
 colorama
-torchmetrics
-pytorch_lightning
+matplotlib

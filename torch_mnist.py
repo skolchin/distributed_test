@@ -3,7 +3,7 @@ import torch
 import torch.optim as optim
 from torch.optim.lr_scheduler import StepLR
 
-from mnist import ConvNet, get_device, get_data_loaders, train_mnist, test_mnist
+from lib.mnist import ConvNet, get_device, get_data_loaders, train_mnist, test_mnist
 
 @click.command()
 @click.option('-n', '--epochs', type=int, default=14, show_default=True,
