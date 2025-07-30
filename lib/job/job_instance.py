@@ -7,7 +7,7 @@ from pathlib import Path
 from datetime import datetime
 from sqlalchemy import Column, JSON
 from sqlmodel import SQLModel, Field
-from ray.util.state import get_node
+from ray.util import get_node_ip_address
 from ray._private.worker import WORKER_MODE
 from pydantic import PrivateAttr
 from typing import Any, Dict
@@ -36,19 +36,14 @@ class JobInstance(SQLModel, table=True):
         rt['ray_job_id'] = ctx.get_job_id()
         rt['node_id'] = ctx.get_node_id()
         rt['worker_id'] = ctx.get_worker_id()
+        rt['node_ip_address'] = get_node_ip_address()
+
         if ctx.worker.mode == WORKER_MODE:
             rt['task_id'] = ctx.get_task_id()
             rt['resources'] = ctx.get_assigned_resources()
         else:
             rt['task_id'] = None
             rt['resources'] = {}
-
-        if node := get_node(rt['node_id']):
-            rt['node_ip_address'] = node.node_ip    # type:ignore
-            rt['node_name'] = node.node_name        # type:ignore
-        else:
-            rt['node_ip_address'] = None
-            rt['node_name'] = None
 
         return JobRuntimeInfo(**rt)
 

@@ -35,6 +35,7 @@ class RayConnection(BaseModel):
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         # ray.shutdown()
+        _logger.debug('Closing Ray connection')
         self._client.disconnect()
 
     async def __aenter__(self):
@@ -43,5 +44,5 @@ class RayConnection(BaseModel):
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
         # ray.shutdown()
+        _logger.debug('Closing Ray connection')
         self._client.disconnect()
-
