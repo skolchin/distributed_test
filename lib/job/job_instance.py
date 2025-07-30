@@ -30,7 +30,7 @@ class JobInstance(SQLModel, table=True):
 
     @classmethod
     def job_runtime_info(cls) -> JobRuntimeInfo:
-        """ Runtime info (valid only within ray-called function) """
+        """ Runtime info """
         rt = {}
         ctx = ray.get_runtime_context()
         rt['ray_job_id'] = ctx.get_job_id()

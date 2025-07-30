@@ -1,11 +1,1050 @@
 <!DOCTYPE html>
-<html lang="ru">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Sample page</title>
+    <title>Ray Job Manager</title>
+    <style>
+        :root {
+            --primary-color: #3498db;
+            --secondary-color: #2980b9;
+            --dark-color: #2c3e50;
+            --light-color: #ecf0f1;
+            --success-color: #27ae60;
+            --danger-color: #e74c3c;
+            --warning-color: #f39c12;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 0;
+            padding: 0;
+            background-color: #f5f5f5;
+            color: #333;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 15px;
+        }
+        
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+            padding-bottom: 10px;
+            border-bottom: 1px solid #ddd;
+        }
+        
+        .status-bar {
+            display: flex;
+            gap: 15px;
+            margin-bottom: 15px;
+        }
+        
+        .status-card {
+            background-color: white;
+            border-radius: 5px;
+            padding: 10px 15px;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+            flex: 1;
+        }
+        
+        .status-card h3 {
+            margin: 5px 0;
+            font-size: 14px;
+            color: var(--dark-color);
+        }
+        
+        .status-value {
+            font-size: 18px;
+            font-weight: bold;
+            color: var(--primary-color);
+        }
+        
+        .panel {
+            background-color: white;
+            border-radius: 5px;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+            margin-bottom: 15px;
+            overflow: hidden;
+        }
+        
+        .panel-header {
+            background-color: var(--dark-color);
+            color: white;
+            padding: 8px 12px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .panel-body {
+            padding: 12px;
+        }
+        
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 14px;
+        }
+        
+        th, td {
+            padding: 8px 12px;
+            text-align: left;
+            border-bottom: 1px solid #eee;
+        }
+        
+        th {
+            background-color: #f8f9fa;
+            font-weight: 600;
+        }
+        
+        tr:hover {
+            background-color: #f5f5f5;
+        }
+        
+        .btn {
+            padding: 6px 12px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: 500;
+            transition: background-color 0.2s;
+            font-size: 13px;
+        }
+        
+        .btn-primary {
+            background-color: var(--primary-color);
+            color: white;
+        }
+        
+        .btn-primary:hover {
+            background-color: var(--secondary-color);
+        }
+        
+        .btn-danger {
+            background-color: var(--danger-color);
+            color: white;
+        }
+        
+        .btn-danger:hover {
+            background-color: #c0392b;
+        }
+        
+        .btn-success {
+            background-color: var(--success-color);
+            color: white;
+        }
+        
+        .btn-success:hover {
+            background-color: #219653;
+        }
+        
+        .form-group {
+            margin-bottom: 12px;
+        }
+        
+        label {
+            display: block;
+            margin-bottom: 4px;
+            font-weight: 500;
+            font-size: 13px;
+        }
+        
+        input, select {
+            width: 100%;
+            padding: 6px 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            box-sizing: border-box;
+            font-size: 13px;
+        }
+        
+        .checkbox-label {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            cursor: pointer;
+        }
+        
+        .checkbox-label input {
+            width: auto;
+        }
+        
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.5);
+            z-index: 1000;
+            justify-content: center;
+            align-items: center;
+        }
+        
+        .modal-content {
+            background-color: white;
+            border-radius: 5px;
+            width: 700px;
+            max-width: 90%;
+            max-height: 90vh;
+            overflow-y: auto;
+        }
+        
+        .modal-header {
+            padding: 12px 15px;
+            border-bottom: 1px solid #eee;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .modal-body {
+            padding: 12px 15px;
+        }
+        
+        .modal-footer {
+            padding: 12px 15px;
+            border-top: 1px solid #eee;
+            display: flex;
+            justify-content: flex-end;
+            gap: 8px;
+        }
+        
+        .close {
+            font-size: 20px;
+            cursor: pointer;
+        }
+        
+        .job-status {
+            display: inline-block;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-size: 11px;
+            font-weight: 500;
+        }
+        
+        .status-running {
+            background-color: #d4edff;
+            color: var(--primary-color);
+        }
+        
+        .status-completed {
+            background-color: #d4f5e0;
+            color: var(--success-color);
+        }
+        
+        .status-failed {
+            background-color: #fadbd8;
+            color: var(--danger-color);
+        }
+        
+        .status-pending {
+            background-color: #fdebd0;
+            color: var(--warning-color);
+        }
+        
+        .toolbar {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 12px;
+        }
+        
+        .new-job-form {
+            background-color: white;
+            border-radius: 5px;
+            padding: 15px;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+            margin-bottom: 15px;
+        }
+        
+        .job-row {
+            cursor: pointer;
+        }
+        
+        .job-row .toggle-instances {
+            margin-right: 6px;
+            display: inline-block;
+            width: 14px;
+            text-align: center;
+        }
+        
+        .instance-row {
+            display: none;
+            background-color: #f9f9f9;
+        }
+        
+        .instance-row.expanded {
+            display: table-row;
+        }
+        
+        .job-expanded .toggle-instances::after {
+            content: "▼";
+            font-size: 10px;
+        }
+        
+        .job-collapsed .toggle-instances::after {
+            content: "▶";
+            font-size: 10px;
+        }
+        
+        .job-expanded {
+            background-color: #f0f7ff;
+        }
+        
+        .parameters-section {
+            margin-top: 10px;
+            border: 1px solid #eee;
+            border-radius: 4px;
+            padding: 10px;
+            display: none;
+        }
+        
+        .parameters-section.expanded {
+            display: block;
+        }
+        
+        .toggle-parameters {
+            color: var(--primary-color);
+            text-decoration: none;
+            font-size: 13px;
+            cursor: pointer;
+            display: inline-block;
+            margin-top: 5px;
+        }
+        
+        .parameter-row {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 8px;
+        }
+        
+        .parameter-row input {
+            flex: 1;
+        }
+        
+        .parameter-row button {
+            width: 30px;
+            padding: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .add-parameter {
+            margin-top: 5px;
+        }
+        
+        .output-link {
+            color: var(--primary-color);
+            text-decoration: underline;
+            cursor: pointer;
+        }
+        
+        .instance-table {
+            width: 100%;
+            margin-top: 10px;
+            font-size: 13px;
+        }
+        
+        .instance-table th, 
+        .instance-table td {
+            padding: 6px 8px;
+        }
+    </style>
 </head>
 <body>
-    Hello, world!
+    <div class="container">
+        <div class="header">
+            <h1 style="font-size: 20px; margin: 0;">Ray Job Manager</h1>
+            <div>
+                <span id="last-updated" style="font-size: 13px;">Last updated: Never</span>
+            </div>
+        </div>
+        
+        <div class="status-bar">
+            <div class="status-card">
+                <h3>Running Jobs</h3>
+                <div class="status-value" id="running-jobs">0</div>
+            </div>
+            <div class="status-card">
+                <h3>Completed Jobs</h3>
+                <div class="status-value" id="completed-jobs">0</div>
+            </div>
+            <div class="status-card">
+                <h3>Failed Jobs</h3>
+                <div class="status-value" id="failed-jobs">0</div>
+            </div>
+        </div>
+        
+        <div class="new-job-form">
+            <h3 style="margin-top: 0; font-size: 16px;">Submit New Job</h3>
+            <form id="job-submit-form">
+                <div class="form-group">
+                    <label for="job-type">Job Type</label>
+                    <select id="job-type" required>
+                        <option value="">Select a job type</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="as-background"> Run as background job
+                    </label>
+                </div>
+                
+                <a class="toggle-parameters">+ Add parameters</a>
+                <div class="parameters-section" id="parameters-section">
+                    <div id="parameters-container">
+                        <!-- Parameters will be added here -->
+                    </div>
+                    <button type="button" class="btn btn-primary add-parameter" id="add-parameter">Add Parameter</button>
+                </div>
+                
+                <div class="form-group" style="margin-top: 15px;">
+                    <button type="submit" class="btn btn-primary">Submit Job</button>
+                    <button type="button" class="btn" id="refresh-jobs">Refresh List</button>
+                </div>
+            </form>
+        </div>
+        
+        <div class="panel">
+            <div class="panel-header">
+                <h3 style="margin: 0; font-size: 16px;">Job List</h3>
+                <div class="toolbar">
+                    <input type="text" id="job-search" placeholder="Search jobs..." style="width: 200px;">
+                </div>
+            </div>
+            <div class="panel-body">
+                <table id="jobs-table">
+                    <thead>
+                        <tr>
+                            <th>Job ID</th>
+                            <th>Type</th>
+                            <th>Status</th>
+                            <th>Started</th>
+                            <th>Finished</th>
+                            <th>Instances</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <!-- Jobs will be populated here -->
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+    
+    <div class="modal" id="job-details-modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 style="margin: 0; font-size: 16px;">Job Details</h3>
+                <span class="close">&times;</span>
+            </div>
+            <div class="modal-body" id="job-details-content">
+                Loading job details...
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-danger" id="cancel-job-btn">Cancel Job</button>
+                <button class="btn" id="close-modal-btn">Close</button>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        // Base API URL - adjust as needed
+        const API_BASE_URL = '/';
+        
+        // Current selected job ID for modal
+        let currentJobId = null;
+        
+        // DOM Elements
+        const lastUpdatedEl = document.getElementById('last-updated');
+        const runningJobsEl = document.getElementById('running-jobs');
+        const completedJobsEl = document.getElementById('completed-jobs');
+        const failedJobsEl = document.getElementById('failed-jobs');
+        const jobsTableBody = document.querySelector('#jobs-table tbody');
+        const jobTypeSelect = document.getElementById('job-type');
+        const jobSubmitForm = document.getElementById('job-submit-form');
+        const jobDetailsModal = document.getElementById('job-details-modal');
+        const jobDetailsContent = document.getElementById('job-details-content');
+        const closeModalBtn = document.querySelector('.close');
+        const closeModalBtnFooter = document.getElementById('close-modal-btn');
+        const cancelJobBtn = document.getElementById('cancel-job-btn');
+        const refreshJobsBtn = document.getElementById('refresh-jobs');
+        const jobSearchInput = document.getElementById('job-search');
+        const parametersSection = document.getElementById('parameters-section');
+        const parametersContainer = document.getElementById('parameters-container');
+        const addParameterBtn = document.getElementById('add-parameter');
+        const toggleParametersBtn = document.querySelector('.toggle-parameters');
+        
+        // Helper function to format date
+        function formatDate(dateString) {
+            if (!dateString) return 'N/A';
+            const date = new Date(dateString);
+            return date.toLocaleString();
+        }
+        
+        // Helper function to determine job status
+        function getJobStatus(job) {
+            if (job.finished) {
+                return job.output ? 'completed' : 'failed';
+            }
+            return job.started ? 'running' : 'pending';
+        }
+        
+        // Helper function to get overall job status from multiple instances
+        function getOverallJobStatus(instances) {
+            if (!instances || instances.length === 0) return 'pending';
+            
+            const statuses = instances.map(instance => getJobStatus(instance));
+            
+            if (statuses.includes('failed')) return 'failed';
+            if (statuses.includes('running')) return 'running';
+            if (statuses.every(status => status === 'completed')) return 'completed';
+            return 'pending';
+        }
+        
+        // Helper function to update last updated time
+        function updateLastUpdated() {
+            const now = new Date();
+            lastUpdatedEl.textContent = `Last updated: ${now.toLocaleString()}`;
+        }
+        
+        // Helper function to count instances by status
+        function countInstancesByStatus(instances) {
+            const counts = {
+                running: 0,
+                completed: 0,
+                failed: 0,
+                pending: 0
+            };
+            
+            if (!instances) return counts;
+            
+            instances.forEach(instance => {
+                counts[getJobStatus(instance)]++;
+            });
+            
+            return counts;
+        }
+        
+        // Helper function to check if a string is a URL
+        function isUrl(str) {
+            try {
+                new URL(str);
+                return true;
+            } catch (_) {
+                return false;
+            }
+        }
+        
+        // Helper function to download a file from URL
+        function downloadFile(url, filename) {
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = filename || 'download';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+        }
+        
+        // Add parameter row to the form
+        function addParameterRow(key = '', value = '') {
+            const paramRow = document.createElement('div');
+            paramRow.className = 'parameter-row';
+            paramRow.innerHTML = `
+                <input type="text" placeholder="Parameter name" class="param-key" value="${key}">
+                <input type="text" placeholder="Parameter value" class="param-value" value="${value}">
+                <button type="button" class="btn btn-danger remove-parameter">&times;</button>
+            `;
+            parametersContainer.appendChild(paramRow);
+            
+            // Add event listener to remove button
+            paramRow.querySelector('.remove-parameter').addEventListener('click', () => {
+                parametersContainer.removeChild(paramRow);
+            });
+        }
+        
+        // Fetch job types
+        async function fetchJobTypes() {
+            try {
+                const response = await fetch(`${API_BASE_URL}job/types`);
+                const data = await response.json();
+                
+                // Clear existing options
+                jobTypeSelect.innerHTML = '<option value="">Select a job type</option>';
+                
+                // Add new options (assuming data is an array of job types)
+                data.job_types.forEach(type => {
+                    const option = document.createElement('option');
+                    option.value = type;
+                    option.textContent = type;
+                    jobTypeSelect.appendChild(option);
+                });
+                
+                return data;
+            } catch (error) {
+                console.error('Error fetching job types:', error);
+                return null;
+            }
+        }
+        
+        // Fetch job list
+        async function fetchJobList() {
+            try {
+                const response = await fetch(`${API_BASE_URL}job/list`);
+                const data = await response.json();
+                
+                // Group instances by job_id
+                const jobsMap = new Map();
+                
+                if (data.job_instances && data.job_instances.length > 0) {
+                    data.job_instances.forEach(instance => {
+                        if (!jobsMap.has(instance.job_id)) {
+                            jobsMap.set(instance.job_id, []);
+                        }
+                        jobsMap.get(instance.job_id).push(instance);
+                    });
+                }
+                
+                // Update status counts
+                let runningCount = 0;
+                let completedCount = 0;
+                let failedCount = 0;
+                
+                jobsMap.forEach(instances => {
+                    const status = getOverallJobStatus(instances);
+                    if (status === 'running') runningCount++;
+                    else if (status === 'completed') completedCount++;
+                    else if (status === 'failed') failedCount++;
+                });
+                
+                runningJobsEl.textContent = runningCount;
+                completedJobsEl.textContent = completedCount;
+                failedJobsEl.textContent = failedCount;
+                
+                // Update jobs table
+                jobsTableBody.innerHTML = '';
+                
+                if (jobsMap.size > 0) {
+                    jobsMap.forEach((instances, jobId) => {
+                        const firstInstance = instances[0];
+                        const overallStatus = getOverallJobStatus(instances);
+                        const statusClass = `status-${overallStatus}`;
+                        const statusText = overallStatus.charAt(0).toUpperCase() + overallStatus.slice(1);
+                        
+                        const instanceCounts = countInstancesByStatus(instances);
+                        
+                        // Create job row
+                        const jobRow = document.createElement('tr');
+                        jobRow.className = 'job-row job-collapsed';
+                        jobRow.dataset.jobId = jobId;
+                        jobRow.innerHTML = `
+                            <td>
+                                <span class="toggle-instances"></span>
+                                ${jobId}
+                            </td>
+                            <td>${firstInstance.job_type}</td>
+                            <td><span class="job-status ${statusClass}">${statusText}</span></td>
+                            <td>${formatDate(firstInstance.started)}</td>
+                            <td>${formatDate(firstInstance.finished)}</td>
+                            <td>
+                                ${instanceCounts.running ? `<span class="job-status status-running">${instanceCounts.running} running</span> ` : ''}
+                                ${instanceCounts.completed ? `<span class="job-status status-completed">${instanceCounts.completed} completed</span> ` : ''}
+                                ${instanceCounts.failed ? `<span class="job-status status-failed">${instanceCounts.failed} failed</span> ` : ''}
+                                ${instanceCounts.pending ? `<span class="job-status status-pending">${instanceCounts.pending} pending</span>` : ''}
+                            </td>
+                            <td>
+                                <button class="btn btn-primary btn-view-job" data-job-id="${jobId}">View</button>
+                            </td>
+                        `;
+                        jobsTableBody.appendChild(jobRow);
+                        
+                        // Add click handler to toggle instances
+                        jobRow.querySelector('.toggle-instances').addEventListener('click', (e) => {
+                            e.stopPropagation();
+                            jobRow.classList.toggle('job-expanded');
+                            jobRow.classList.toggle('job-collapsed');
+                            
+                            // Toggle all instance rows for this job
+                            document.querySelectorAll(`.instance-row[data-job-id="${jobId}"]`).forEach(row => {
+                                row.classList.toggle('expanded');
+                            });
+                        });
+                        
+                        // Create instance rows
+                        instances.forEach((instance, index) => {
+                            const instanceStatus = getJobStatus(instance);
+                            const instanceStatusClass = `status-${instanceStatus}`;
+                            const instanceStatusText = instanceStatus.charAt(0).toUpperCase() + instanceStatus.slice(1);
+                            
+                            const instanceRow = document.createElement('tr');
+                            instanceRow.className = 'instance-row';
+                            instanceRow.dataset.jobId = jobId;
+                            instanceRow.innerHTML = `
+                                <td>Instance ${index + 1}</td>
+                                <td>${instance.job_type}</td>
+                                <td><span class="job-status ${instanceStatusClass}">${instanceStatusText}</span></td>
+                                <td>${formatDate(instance.started)}</td>
+                                <td>${formatDate(instance.finished)}</td>
+                                <td></td>
+                                <td>
+                                    <button class="btn btn-primary btn-view-instance" data-job-id="${jobId}" data-instance-index="${index}">View</button>
+                                </td>
+                            `;
+                            jobsTableBody.appendChild(instanceRow);
+                            
+                            // Add click handler for instance view button
+                            instanceRow.querySelector('.btn-view-instance').addEventListener('click', (e) => {
+                                e.stopPropagation();
+                                currentJobId = e.target.dataset.jobId;
+                                showJobDetails(currentJobId, index);
+                            });
+                        });
+                    });
+                    
+                    // Add event listeners to view buttons
+                    document.querySelectorAll('.btn-view-job').forEach(btn => {
+                        btn.addEventListener('click', (e) => {
+                            e.stopPropagation();
+                            currentJobId = e.target.dataset.jobId;
+                            showJobDetails(currentJobId);
+                        });
+                    });
+                    
+                    // Implement search functionality
+                    jobSearchInput.addEventListener('input', () => {
+                        const searchTerm = jobSearchInput.value.toLowerCase();
+                        const rows = jobsTableBody.querySelectorAll('.job-row');
+                        
+                        rows.forEach(row => {
+                            const jobId = row.cells[0].textContent.toLowerCase();
+                            const jobType = row.cells[1].textContent.toLowerCase();
+                            const shouldShow = jobId.includes(searchTerm) || jobType.includes(searchTerm);
+                            row.style.display = shouldShow ? '' : 'none';
+                            
+                            // Hide/show instances if parent row is hidden/shown
+                            if (!shouldShow) {
+                                document.querySelectorAll(`.instance-row[data-job-id="${row.dataset.jobId}"]`).forEach(instanceRow => {
+                                    instanceRow.style.display = 'none';
+                                });
+                            }
+                        });
+                    });
+                } else {
+                    jobsTableBody.innerHTML = '<tr><td colspan="7">No jobs found</td></tr>';
+                }
+                
+                updateLastUpdated();
+                return data;
+            } catch (error) {
+                console.error('Error fetching job list:', error);
+                runningJobsEl.textContent = 'Error';
+                completedJobsEl.textContent = 'Error';
+                failedJobsEl.textContent = 'Error';
+                jobsTableBody.innerHTML = '<tr><td colspan="7">Error loading jobs</td></tr>';
+                return null;
+            }
+        }
+        
+        // Fetch single job info
+        async function fetchJobInfo(jobId) {
+            try {
+                const response = await fetch(`${API_BASE_URL}job?job_id=${jobId}`);
+                const data = await response.json();
+                return data;
+            } catch (error) {
+                console.error('Error fetching job info:', error);
+                return null;
+            }
+        }
+        
+        // Submit new job
+        async function submitJob(jobType, asBackground) {
+            try {
+                // Collect parameters
+                const params = {};
+                const paramRows = parametersContainer.querySelectorAll('.parameter-row');
+                
+                paramRows.forEach(row => {
+                    const key = row.querySelector('.param-key').value;
+                    const value = row.querySelector('.param-value').value;
+                    if (key) {
+                        params[key] = value;
+                    }
+                });
+                
+                const response = await fetch(`${API_BASE_URL}job`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        job_type: jobType,
+                        as_background: asBackground,
+                        ...params
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    alert('Job submitted successfully!');
+                    fetchJobList(); // Refresh job list
+                    jobSubmitForm.reset(); // Reset form
+                    parametersContainer.innerHTML = ''; // Clear parameters
+                    parametersSection.classList.remove('expanded');
+                } else {
+                    alert('Error submitting job: ' + (data.detail || 'Unknown error'));
+                }
+                
+                return data;
+            } catch (error) {
+                console.error('Error submitting job:', error);
+                alert('Error submitting job. See console for details.');
+                return null;
+            }
+        }
+        
+        // Cancel job
+        async function cancelJob(jobId) {
+            try {
+                const response = await fetch(`${API_BASE_URL}job/cancel?job_id=${jobId}`, {
+                    method: 'POST'
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    alert('Job cancellation requested!');
+                    fetchJobList(); // Refresh job list
+                    jobDetailsModal.style.display = 'none'; // Close modal
+                } else {
+                    alert('Error canceling job: ' + (data.detail || 'Unknown error'));
+                }
+                
+                return data;
+            } catch (error) {
+                console.error('Error canceling job:', error);
+                alert('Error canceling job. See console for details.');
+                return null;
+            }
+        }
+        
+        // Show job details in modal
+        async function showJobDetails(jobId, instanceIndex = null) {
+            const jobData = await fetchJobInfo(jobId);
+            
+            if (jobData) {
+                let detailsHtml = '';
+                
+                if (instanceIndex !== null && jobData.job_instances && jobData.job_instances[instanceIndex]) {
+                    // Show specific instance details
+                    const instance = jobData.job_instances[instanceIndex];
+                    const status = getJobStatus(instance);
+                    
+                    detailsHtml = `
+                        <h4>Job Instance Details</h4>
+                        <p><strong>Job ID:</strong> ${jobId}</p>
+                        <p><strong>Instance Index:</strong> ${instanceIndex + 1}</p>
+                        <p><strong>Type:</strong> ${instance.job_type}</p>
+                        <p><strong>Status:</strong> <span class="job-status status-${status}">${
+                            status.charAt(0).toUpperCase() + status.slice(1)
+                        }</span></p>
+                        <p><strong>Started:</strong> ${formatDate(instance.started)}</p>
+                        <p><strong>Finished:</strong> ${formatDate(instance.finished)}</p>
+                        <p><strong>Background:</strong> ${instance.is_background ? 'Yes' : 'No'}</p>
+                    `;
+                    
+                    if (instance.runtime_info) {
+                        detailsHtml += `
+                            <h5>Runtime Info</h5>
+                            <p><strong>Ray Job ID:</strong> ${instance.runtime_info.ray_job_id}</p>
+                            <p><strong>Node:</strong> ${instance.runtime_info.node_name} (${instance.runtime_info.node_ip_address})</p>
+                            <p><strong>Worker ID:</strong> ${instance.runtime_info.worker_id || 'N/A'}</p>
+                            <p><strong>Task ID:</strong> ${instance.runtime_info.task_id || 'N/A'}</p>
+                        `;
+                        
+                        if (instance.runtime_info.resources) {
+                            detailsHtml += '<h6>Resources:</h6><ul>';
+                            for (const [key, value] of Object.entries(instance.runtime_info.resources)) {
+                                detailsHtml += `<li><strong>${key}:</strong> ${JSON.stringify(value)}</li>`;
+                            }
+                            detailsHtml += '</ul>';
+                        }
+                    }
+                    
+                    if (instance.kwargs) {
+                        detailsHtml += '<h5>Parameters</h5><pre>' + JSON.stringify(instance.kwargs, null, 2) + '</pre>';
+                    }
+                    
+                    if (instance.output) {
+                        if (isUrl(instance.output)) {
+                            detailsHtml += `
+                                <h5>Output</h5>
+                                <p>Output is available at: <span class="output-link" data-url="${instance.output}">Download output</span></p>
+                            `;
+                        } else {
+                            detailsHtml += '<h5>Output</h5><pre>' + JSON.stringify(instance.output, null, 2) + '</pre>';
+                        }
+                    }
+                    
+                    // Only show cancel button for running/pending instances
+                    if (status === 'running' || status === 'pending') {
+                        cancelJobBtn.style.display = 'inline-block';
+                        cancelJobBtn.dataset.jobId = jobId;
+                        cancelJobBtn.dataset.instanceIndex = instanceIndex;
+                    } else {
+                        cancelJobBtn.style.display = 'none';
+                    }
+                } else {
+                    // Show job overview with all instances
+                    const overallStatus = getOverallJobStatus(jobData.job_instances);
+                    const instanceCounts = countInstancesByStatus(jobData.job_instances);
+                    
+                    detailsHtml = `
+                        <h4>Job Overview</h4>
+                        <p><strong>Job ID:</strong> ${jobId}</p>
+                        <p><strong>Type:</strong> ${jobData.job_instances?.[0]?.job_type || 'N/A'}</p>
+                        <p><strong>Overall Status:</strong> <span class="job-status status-${overallStatus}">${
+                            overallStatus.charAt(0).toUpperCase() + overallStatus.slice(1)
+                        }</span></p>
+                        <p><strong>Instances:</strong></p>
+                        <ul>
+                            <li><span class="job-status status-running">${instanceCounts.running} running</span></li>
+                            <li><span class="job-status status-completed">${instanceCounts.completed} completed</span></li>
+                            <li><span class="job-status status-failed">${instanceCounts.failed} failed</span></li>
+                            <li><span class="job-status status-pending">${instanceCounts.pending} pending</span></li>
+                        </ul>
+                    `;
+                    
+                    if (jobData.job_instances && jobData.job_instances.length > 0) {
+                        detailsHtml += '<h5>Instances</h5><table class="instance-table"><thead><tr>';
+                        detailsHtml += '<th>#</th><th>Status</th><th>Started</th><th>Finished</th><th>Node</th><th>Actions</th>';
+                        detailsHtml += '</tr></thead><tbody>';
+                        
+                        jobData.job_instances.forEach((instance, index) => {
+                            const status = getJobStatus(instance);
+                            detailsHtml += `
+                                <tr>
+                                    <td>${index + 1}</td>
+                                    <td><span class="job-status status-${status}">${
+                                        status.charAt(0).toUpperCase() + status.slice(1)
+                                    }</span></td>
+                                    <td>${formatDate(instance.started)}</td>
+                                    <td>${formatDate(instance.finished)}</td>
+                                    <td>${instance.runtime_info?.node_name || 'N/A'}</td>
+                                    <td>
+                                        <button class="btn btn-primary btn-view-instance" data-job-id="${jobId}" data-instance-index="${index}">Details</button>
+                                    </td>
+                                </tr>
+                            `;
+                        });
+                        
+                        detailsHtml += '</tbody></table>';
+                    }
+                    
+                    // Only show cancel button if any instances are running/pending
+                    if (overallStatus === 'running' || overallStatus === 'pending') {
+                        cancelJobBtn.style.display = 'inline-block';
+                        cancelJobBtn.dataset.jobId = jobId;
+                        delete cancelJobBtn.dataset.instanceIndex;
+                    } else {
+                        cancelJobBtn.style.display = 'none';
+                    }
+                }
+                
+                jobDetailsContent.innerHTML = detailsHtml;
+                jobDetailsModal.style.display = 'flex';
+                
+                // Add click handlers for instance view buttons in modal
+                jobDetailsContent.querySelectorAll('.btn-view-instance').forEach(btn => {
+                    btn.addEventListener('click', (e) => {
+                        const jobId = e.target.dataset.jobId;
+                        const instanceIndex = parseInt(e.target.dataset.instanceIndex);
+                        showJobDetails(jobId, instanceIndex);
+                    });
+                });
+                
+                // Add click handler for output download links
+                jobDetailsContent.querySelectorAll('.output-link').forEach(link => {
+                    link.addEventListener('click', (e) => {
+                        const url = e.target.dataset.url;
+                        const filename = `job_${jobId}_output` + (instanceIndex !== null ? `_instance_${instanceIndex + 1}` : '') + '.dat';
+                        downloadFile(url, filename);
+                    });
+                });
+            } else {
+                jobDetailsContent.innerHTML = '<p>Error loading job details</p>';
+                jobDetailsModal.style.display = 'flex';
+                cancelJobBtn.style.display = 'none';
+            }
+        }
+        
+        // Initialize the application
+        async function init() {
+            // Load initial data
+            await Promise.all([
+                fetchJobTypes(),
+                fetchJobList()
+            ]);
+            
+            // Set up refresh button
+            refreshJobsBtn.addEventListener('click', fetchJobList);
+            
+            // Set up job submission form
+            jobSubmitForm.addEventListener('submit', (e) => {
+                e.preventDefault();
+                const jobType = jobTypeSelect.value;
+                const asBackground = document.getElementById('as-background').checked;
+                
+                if (jobType) {
+                    submitJob(jobType, asBackground);
+                }
+            });
+            
+            // Set up modal close buttons
+            closeModalBtn.addEventListener('click', () => {
+                jobDetailsModal.style.display = 'none';
+            });
+            
+            closeModalBtnFooter.addEventListener('click', () => {
+                jobDetailsModal.style.display = 'none';
+            });
+            
+            // Set up cancel job button
+            cancelJobBtn.addEventListener('click', () => {
+                if (currentJobId) {
+                    if (confirm('Are you sure you want to cancel this job?')) {
+                        cancelJob(currentJobId);
+                    }
+                }
+            });
+            
+            // Set up parameters section toggle
+            toggleParametersBtn.addEventListener('click', () => {
+                parametersSection.classList.toggle('expanded');
+                toggleParametersBtn.textContent = parametersSection.classList.contains('expanded') ? 
+                    '- Hide parameters' : '+ Add parameters';
+            });
+            
+            // Set up add parameter button
+            addParameterBtn.addEventListener('click', () => {
+                addParameterRow();
+            });
+            
+            // Set up periodic refresh (every 30 seconds)
+            setInterval(fetchJobList, 30000);
+        }
+        
+        // Start the application
+        document.addEventListener('DOMContentLoaded', init);
+    </script>
 </body>
 </html>
