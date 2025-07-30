@@ -18,7 +18,7 @@ class ComputeJob(Job):
     def setup(self):
         data = np.random.uniform(0, 1, self.shape) if self.num_batches <= 1 \
             else [np.random.uniform(0, 1, self.shape) for _ in range(self.num_batches)]
-        return { 'data': data  }
+        return { 'data': data }
 
     @override
     def start(self, *, data: np.ndarray) -> ray.ObjectRef  | List[ray.ObjectRef]:

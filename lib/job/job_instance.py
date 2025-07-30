@@ -88,7 +88,7 @@ class JobInstance(SQLModel, table=True):
         def get_size(x) -> int:
             match x:
                 case np.ndarray():
-                    return data.nbytes
+                    return x.nbytes
 
                 case list() | tuple():
                     return sum([get_size(v) for v in x]) + sys.getsizeof(x)

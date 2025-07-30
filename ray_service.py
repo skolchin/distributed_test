@@ -16,7 +16,7 @@ from fastapi import (
 from lib.state import lifespan, BackendState
 from lib.job.job import Job
 from lib.job.job_instance import JobInstance
-from lib.types import *
+from lib.responses import *
 from typing import cast
 
 logging.basicConfig(
@@ -110,9 +110,9 @@ async def get_node_status(
 @app.get('/job/types', tags=['job'], operation_id='list_job_types')
 async def get_job_types_list(
     state: BackendState = Depends(get_state_from_request)
-) -> JSONResponse:
+) -> JobTypesResponse:
     """ Retrieve available job types """
-    return JSONResponse({'job_types': list(state.job_types.keys())})
+    return JobTypesResponse(job_types=list(state.job_types.keys()))
 
 @app.get('/job/list', tags=['job'], operation_id='list_jobs')
 async def get_job_list(

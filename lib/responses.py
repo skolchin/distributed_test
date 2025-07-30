@@ -35,6 +35,11 @@ class NodeOperationResponse(BaseModel):
     node_address: str
     """ Node IP address or domain name """
 
+class JobTypesResponse(BaseModel):
+    """ Job types response """
+    job_types: List[str] = Field(default_factory=list)
+    """ Job type """
+
 class JobSubmitRequest(BaseModel):
     """ Job submit request """
     job_type: str

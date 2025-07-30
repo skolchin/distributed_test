@@ -6,7 +6,7 @@ from uuid import uuid4
 from pathlib import Path
 from abc import abstractmethod
 from pydantic import BaseModel, Field, model_serializer
-from typing import Any, Dict, List, TypedDict, Type, ClassVar
+from typing import Any, Dict, List, TypedDict, Type, ClassVar, Generator
 
 from lib.job.types import JobRuntimeInfo
 
@@ -33,7 +33,7 @@ class Job(BaseModel):
     """ Internal job id """
 
     supports_background: bool = False
-    """ Shall run in background """
+    """ Could be started in background """
 
     requirements: Dict[str, Any] = Field(default_factory=dict)
     """ Job resource requirements """
@@ -42,14 +42,22 @@ class Job(BaseModel):
         """ Sets a job up """
         pass
 
-    @abstractmethod
-    def start(self, *args, **kwargs) -> ray.ObjectRef | List[ray.ObjectRef]:
-        pass
+    def start(self, *args, **kwargs) -> ray.ObjectRef | List[ray.ObjectRef] | None:
+        return None
 
     def run(self, *args, **kwargs) -> Any:
         futures = self.start(*args, **kwargs)
+        if futures is None:
+            return None
         result = ray.get(futures)
         return result
+
+    def stream(self, *args, **kwargs) -> Generator[Any | List[Any], None, None]:
+        futures = self.start(*args, **kwargs)
+        if futures is None:
+            return None
+        result = ray.get(futures)
+        yield result
 
     @classmethod
     def job_types(cls) -> List[JobType]:
