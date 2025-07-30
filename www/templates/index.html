@@ -850,48 +850,48 @@
                     const status = getJobStatus(instance);
                     
                     detailsHtml = `
-                        <h4>Job Instance Details</h4>
-                        <p><strong>Job ID:</strong> ${jobId}</p>
-                        <p><strong>Instance Index:</strong> ${instanceIndex + 1}</p>
-                        <p><strong>Type:</strong> ${instance.job_type}</p>
-                        <p><strong>Status:</strong> <span class="job-status status-${status}">${
+                        <h4>Instance</h4>
+                        <p><small><strong>Job ID:</strong> ${jobId}</small></p>
+                        <p><small><strong>Instance Index:</strong> ${instanceIndex + 1}</small></p>
+                        <p><small><strong>Type:</strong> ${instance.job_type}</small></p>
+                        <p><small><strong>Status:</strong> <span class="job-status status-${status}">${
                             status.charAt(0).toUpperCase() + status.slice(1)
-                        }</span></p>
-                        <p><strong>Started:</strong> ${formatDate(instance.started)}</p>
-                        <p><strong>Finished:</strong> ${formatDate(instance.finished)}</p>
-                        <p><strong>Background:</strong> ${instance.is_background ? 'Yes' : 'No'}</p>
+                        }</span></small></p>
+                        <p><small><strong>Started:</strong> ${formatDate(instance.started)}</small></p>
+                        <p><small><strong>Finished:</strong> ${formatDate(instance.finished)}</small></p>
+                        <p><small><strong>Background:</strong> ${instance.is_background ? 'Yes' : 'No'}</small></p>
                     `;
                     
                     if (instance.runtime_info) {
                         detailsHtml += `
-                            <h5>Runtime Info</h5>
-                            <p><strong>Ray Job ID:</strong> ${instance.runtime_info.ray_job_id}</p>
-                            <p><strong>Node:</strong> ${instance.runtime_info.node_name} (${instance.runtime_info.node_ip_address})</p>
-                            <p><strong>Worker ID:</strong> ${instance.runtime_info.worker_id || 'N/A'}</p>
-                            <p><strong>Task ID:</strong> ${instance.runtime_info.task_id || 'N/A'}</p>
+                            <h4>Runtime Info</h4>
+                            <p><small><strong>Ray Job ID:</strong> ${instance.runtime_info.ray_job_id}</small></p>
+                            <p><small><strong>Node:</strong> ${instance.runtime_info.node_ip_address}</small></p>
+                            <p><small><strong>Worker ID:</strong> ${instance.runtime_info.worker_id || 'N/A'}</small></p>
+                            <p><small><strong>Task ID:</strong> ${instance.runtime_info.task_id || 'N/A'}</small></p>
                         `;
                         
                         if (instance.runtime_info.resources) {
-                            detailsHtml += '<h6>Resources:</h6><ul>';
+                            detailsHtml += '<h4>Resources:</h4><ul>';
                             for (const [key, value] of Object.entries(instance.runtime_info.resources)) {
-                                detailsHtml += `<li><strong>${key}:</strong> ${JSON.stringify(value)}</li>`;
+                                detailsHtml += `<li><small><strong>${key}:</strong> ${JSON.stringify(value)}</small></li>`;
                             }
                             detailsHtml += '</ul>';
                         }
                     }
                     
                     if (instance.kwargs) {
-                        detailsHtml += '<h5>Parameters</h5><pre>' + JSON.stringify(instance.kwargs, null, 2) + '</pre>';
+                        detailsHtml += '<h4>Parameters</h4><pre>' + JSON.stringify(instance.kwargs, null, 2) + '</pre>';
                     }
                     
                     if (instance.output) {
                         if (isUrl(instance.output)) {
                             detailsHtml += `
-                                <h5>Output</h5>
+                                <h4>Output</h4>
                                 <p>Output is available at: <span class="output-link" data-url="${instance.output}">Download output</span></p>
                             `;
                         } else {
-                            detailsHtml += '<h5>Output</h5><pre>' + JSON.stringify(instance.output, null, 2) + '</pre>';
+                            detailsHtml += '<h4>Output</h4><pre>' + JSON.stringify(instance.output, null, 2) + '</pre>';
                         }
                     }
                     
@@ -925,7 +925,7 @@
                     `;
                     
                     if (jobData.job_instances && jobData.job_instances.length > 0) {
-                        detailsHtml += '<h5>Instances</h5><table class="instance-table"><thead><tr>';
+                        detailsHtml += '<table class="instance-table"><thead><tr>';
                         detailsHtml += '<th>#</th><th>Status</th><th>Started</th><th>Finished</th><th>Node</th><th>Actions</th>';
                         detailsHtml += '</tr></thead><tbody>';
                         
@@ -939,7 +939,7 @@
                                     }</span></td>
                                     <td>${formatDate(instance.started)}</td>
                                     <td>${formatDate(instance.finished)}</td>
-                                    <td>${instance.runtime_info?.node_name || 'N/A'}</td>
+                                    <td>${instance.runtime_info?.node_ip_address || 'N/A'}</td>
                                     <td>
                                         <button class="btn btn-primary btn-view-instance" data-job-id="${jobId}" data-instance-index="${index}">Details</button>
                                     </td>

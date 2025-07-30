@@ -13,7 +13,7 @@ class ComputeJob(Job):
     supports_background: bool = True
 
     num_batches: int = 3
-    shape: Tuple[int,...] = (1000,1000)
+    shape: Tuple[int,...] = (10,10)
 
     def setup(self):
         data = np.random.uniform(0, 1, self.shape) if self.num_batches <= 1 \

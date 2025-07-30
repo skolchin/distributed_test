@@ -15,7 +15,7 @@ class DatasetJob(Job):
     num_batches: int = 3
     batch_size: int = 0
     concurrency: int = 1
-    shape: Tuple[int,...] = (1000,1000)
+    shape: Tuple[int,...] = (10,10)
 
     def setup(self):
         np_data = np.random.uniform(0, 1, self.shape) if self.num_batches <= 1 \

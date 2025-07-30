@@ -111,19 +111,21 @@ class JobInstance(SQLModel, table=True):
                 case _:
                     raise ValueError(f'Non serializable: {type(x)}')
         
-        size = get_size(data)
-        if size <= 1024:
-            # return as is with conversion
-            try:
-                return make_serializable(data)
-            except ValueError:
-                # non-serializable, go on with pickling
-                pass
+        return make_serializable(data)
+    
+        # size = get_size(data)
+        # if size <= 1024:
+        #     # return as is with conversion
+        #     try:
+        #         return make_serializable(data)
+        #     except ValueError:
+        #         # non-serializable, go on with pickling
+        #         pass
         
-        # pickle to disk and return path/URL
-        # TODO: security
-        fn = Path('.').absolute().joinpath('www', 'data', f'{uuid4()}.pkl').relative_to(Path('.').absolute())
-        with open(fn, 'wb') as fp:
-            pickle.dump(data, fp)
+        # # pickle to disk and return path/URL
+        # # TODO: security
+        # fn = Path('.').absolute().joinpath('www', 'data', f'{uuid4()}.pkl').relative_to(Path('.').absolute())
+        # with open(fn, 'wb') as fp:
+        #     pickle.dump(data, fp)
 
-        return str(fn) if not node_ip else f'http://{node_ip}:8000/{str(fn).replace("www/","")}'
+        # return str(fn) if not node_ip else f'http://{node_ip}:8000/{str(fn).replace("www/","")}'
