@@ -14,10 +14,7 @@ class BackendOptions(BaseSettings):
     max_inline_result_size: int = 512
     """ Maximum size of result to be returned inline, in bytes """
 
-    max_inline_result_size: int = 512
-    """ Maximum size of result to be returned inline, in bytes """
-
-    default_result_ttl: float = 300
+    default_result_ttl: int = 300
     """ Default TTL for result to be kept """
 
     result_storage_uri: str | None = None

@@ -63,6 +63,8 @@ class JobResultResponse(BaseModel):
     job: Job
     """ Job info """
 
-    output: Any | None = None
+    output: bytes
     """ job result """
 
+    max_chunk: int = 0
+    """ number of chunks """

@@ -1,4 +1,6 @@
+import io
 import ray
+import redis
 import pickle
 import logging
 from uuid import uuid4
@@ -24,7 +26,7 @@ class CannotSerializeResult(Exception):
 class JobInstance(SQLModel, table=True):
     """ Job instance """
 
-    result_id: int | None = Field(default=None, primary_key=True)
+    instance_id: int | None = Field(default=None, primary_key=True)
     job_id: str = Field(index=True)
     job_type: str = Field(index=True)
     started: datetime = Field(default_factory=datetime.now)
@@ -32,8 +34,9 @@ class JobInstance(SQLModel, table=True):
     runtime_info: JobRuntimeInfo | None = Field(default=None, sa_column=Column(JSON))
     is_background: bool = Field(default=False)
     job_kwargs: Dict[str, Any] | None = Field(default=None, sa_column=Column(JSON))
+    is_inline_output: bool = Field(default=True)
+    output_ttl: int = Field(default=0)
     output: Any | None = Field(default=None, repr=False, sa_column=Column(JSON))
-
     _raw_output: Any | None = PrivateAttr(default=None)
 
     model_config = {
@@ -60,55 +63,92 @@ class JobInstance(SQLModel, table=True):
         return JobRuntimeInfo(**rt)
 
     @classmethod
-    def from_job(cls, 
-                 parent: Job, 
+    def from_job(cls,
+                 parent: Job,
                  job_kwargs: Dict[str, Any] | None = None,
                  output: Any | None = None) -> 'JobInstance':
-        
+
         rt = cls.job_runtime_info()
+        data, inline, ttl = cls._serialize_output(rt['task_id'] or parent.job_id, output, options=parent._options)
         return cls(
             job_id=parent.job_id,
             job_type=parent.job_type,
             runtime_info=rt,
             job_kwargs=job_kwargs,
             _raw_output=output,
-            output=cls._serialize_output(output, options=parent._options),
+            is_inline_output=inline,
+            output_ttl=ttl,
+            output=data,
         )
 
     @classmethod
-    def from_output(cls, 
-                    parent: Job, 
+    def from_output(cls,
+                    parent: Job,
                     job_kwargs: Dict[str, Any],
                     output: Any) -> 'JobInstance':
         rt = cls.job_runtime_info()
+        data, inline, ttl = cls._serialize_output(rt['task_id'] or parent.job_id, output, options=parent._options)
         return cls(
             job_id=parent.job_id,
             job_type=parent.job_type,
             runtime_info=rt,
             job_kwargs=job_kwargs,
-            output=cls._serialize_output(output, options=parent._options),
+            is_inline_output=inline,
+            output_ttl=ttl,
+            output=data,
         )
 
     @classmethod
-    def _serialize_output(cls, 
-                          data: Any, 
-                          options: BackendOptions | None = None) -> Any:
+    def _serialize_output(
+        cls,
+        id: str,
+        data: Any,
+        options: BackendOptions | None = None) -> Tuple[Any, bool, int]:
 
         max_inline_result_size = options.max_inline_result_size if options else 0
         result_storage_uri = options.result_storage_uri if options else None
 
+        if data is None:
+            return None, True, 0
+
         return_inline = True
-        if max_inline_result_size and (sz := get_size(data)) > max_inline_result_size:
+        sz = get_size(data)
+        if max_inline_result_size and sz > max_inline_result_size:
             return_inline = False
 
         if return_inline and not is_serializable(data):
             return_inline = False
 
-        if not return_inline and not result_storage_uri:
+        if return_inline:
+            return data, True, 0
+
+        if not result_storage_uri:
             raise CannotSerializeResult('Cannot serialize results to storage as `result_storage_uri` is not set')
 
-        if return_inline:
-            return data
+        _logger.info(f'Connecting to result backend at {result_storage_uri}')
+        redis_cli = redis.Redis.from_url(options.result_storage_uri)    #type:ignore
+        ttl = options.default_result_ttl if options else 30*60
+
+        redis_cli.set(
+            name=id,
+            value=pickle.dumps(data),
+            ex=ttl,
+        )
+        return None, False, ttl
+
+    def get_output(self, options: BackendOptions) -> bytes | None:
+        if self.output or not options.result_storage_uri:
+            return pickle.dumps(self.output)
         
-        # TODO: serialization to Redis
-        return None
+        _logger.info(f'Connecting to result backend at {options.result_storage_uri}')
+        redis_cli = redis.Redis.from_url(options.result_storage_uri)    # type:ignore
+        result = redis_cli.get(name=(self.runtime_info or {}).get('task_id') or self.job_id)
+        if result is None:
+            return None
+        
+        assert isinstance(result, bytes)
+        return result
+
+        # assert isinstance(result, bytes)
+        # data = pickle.loads(result)
+        # return data

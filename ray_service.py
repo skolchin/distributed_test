@@ -4,7 +4,8 @@ from ray.exceptions import RayTaskError
 from datetime import datetime
 from sqlmodel import Session, select
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import JSONResponse, HTMLResponse
+from fastapi.encoders import jsonable_encoder
+from fastapi.responses import JSONResponse, HTMLResponse, Response
 from fastapi import (
     status,
     FastAPI,
@@ -160,22 +161,47 @@ async def get_job_info(
 @app.get('/job/result', tags=['job'], operation_id='get_job_result')
 async def get_job_result(
     job_id: str,
+    chunk_no: int=-1,
     state: BackendState = Depends(get_state_from_request)
-) -> JobResultResponse:
+) -> Response:
     """ Retrieve single job info """
     with Session(state.engine) as session:
         job_instances=session.exec(select(JobInstance).where(JobInstance.job_id == job_id)).all()
         if not job_instances:
             raise HTTPException(status.HTTP_404_NOT_FOUND, f'Job {job_id} not found')
 
-        job_type = state.job_types[job_instances[0].job_type]
-        job = job_type['job_cls'](
-            job_id=job_instances[0].job_id,
-        )
-        outputs = [j.output for j in job_instances]
-        return JobResultResponse(
-            job=job,
-            output=outputs,
+        # job_type = state.job_types[job_instances[0].job_type]
+        # job = job_type['job_cls'](
+        #     job_id=job_instances[0].job_id,
+        # )
+        # outputs = [j.get_output(state.options) for j in job_instances]
+
+        import io
+        stream = io.BytesIO()
+        for j in job_instances:
+            stream.write(j.get_output(state.options) or b'')
+        stream.seek(0)
+        buf = stream.getvalue()
+
+        page_size = state.options.max_inline_result_size
+        max_chunk = int(len(buf) / page_size + 1)
+        if chunk_no < 0:
+            return Response(
+                content='{ "max_chunk": ' + str(max_chunk) + ', "page_size": ' + str(page_size) + '}',
+                media_type='application/json'
+            )
+        if chunk_no >= max_chunk:
+            return Response(
+                content='No more data',
+                status_code=status.HTTP_404_NOT_FOUND,
+                media_type='text/plain',
+            )
+
+        pos = chunk_no * page_size
+        return Response(
+            content=buf[pos:pos+page_size],
+            status_code=status.HTTP_206_PARTIAL_CONTENT,
+            media_type='application/octet-stream',
         )
     
 @app.post('/job', tags=['job'], operation_id='submit_job')

@@ -20,8 +20,8 @@ fastapi[standard]
 pydantic_settings
 sqlmodel
 
-# json
-orjson
+# redis
+redis
 
 # misc
 tqdm
