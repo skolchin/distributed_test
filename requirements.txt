@@ -20,6 +20,9 @@ fastapi[standard]
 pydantic_settings
 sqlmodel
 
+# json
+orjson
+
 # misc
 tqdm
 click

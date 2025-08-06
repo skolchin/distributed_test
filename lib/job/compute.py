@@ -5,6 +5,8 @@ from lib.job.types import JobRuntimeInfo
 from lib.job.job_instance import JobInstance
 from typing import ClassVar, Tuple, override, Dict, Any, List
 
+from lib.options import BackendOptions
+
 class ComputeJob(Job):
     """ Simple CPU-bound compute job """
 
@@ -15,7 +17,8 @@ class ComputeJob(Job):
     num_batches: int = 3
     shape: Tuple[int,...] = (10,10)
 
-    def setup(self):
+    def setup(self, options: BackendOptions | None = None) -> Dict[str, Any] | None:
+        self._options = options
         data = np.random.uniform(0, 1, self.shape) if self.num_batches <= 1 \
             else [np.random.uniform(0, 1, self.shape) for _ in range(self.num_batches)]
         return { 'data': data }
@@ -30,7 +33,7 @@ class ComputeJob(Job):
             x = np.random.rand()
             return JobInstance.from_output(
                 parent=self,
-                kwargs={
+                job_kwargs={
                     'num_batches': self.num_batches,
                     'shape': self.shape,
                 },
@@ -58,7 +61,7 @@ class GPUComputeJob(ComputeJob):
             z = (x * y).cpu().detach().numpy()
             return JobInstance.from_output(
                 parent=self,
-                kwargs={
+                job_kwargs={
                     'num_batches': self.num_batches,
                     'shape': self.shape,
                 },

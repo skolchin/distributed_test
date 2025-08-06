@@ -8,7 +8,7 @@ from abc import abstractmethod
 from pydantic import BaseModel, Field, model_serializer
 from typing import Any, Dict, List, TypedDict, Type, ClassVar, Generator
 
-from lib.job.types import JobRuntimeInfo
+from lib.options import BackendOptions
 
 _logger = logging.getLogger(__name__)
 
@@ -38,14 +38,19 @@ class Job(BaseModel):
     requirements: Dict[str, Any] = Field(default_factory=dict)
     """ Job resource requirements """
 
-    def setup(self) -> Dict[str, Any] | None:
+    _options: BackendOptions | None = None
+    """ Service options """
+
+    def setup(self, options: BackendOptions | None = None) -> Dict[str, Any] | None:
         """ Sets a job up """
-        pass
+        self._options = options
 
     def start(self, *args, **kwargs) -> ray.ObjectRef | List[ray.ObjectRef] | None:
+        """ Start job with no wait for result """
         return None
 
     def run(self, *args, **kwargs) -> Any:
+        """ Start job and wait for result """
         futures = self.start(*args, **kwargs)
         if futures is None:
             return None
@@ -53,6 +58,7 @@ class Job(BaseModel):
         return result
 
     def stream(self, *args, **kwargs) -> Generator[Any | List[Any], None, None]:
+        """ Start job in streaming mode """
         futures = self.start(*args, **kwargs)
         if futures is None:
             return None

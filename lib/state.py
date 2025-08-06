@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field, ConfigDict
 from lib.options import BackendOptions
 from lib.conn import RayConnection
 from lib.job.job import Job, JobType
+from lib.json_utils import sqla_json_serializer, sqla_json_deserializer
 
 from typing import AsyncIterator, Dict
 
@@ -47,7 +48,13 @@ class BackendState(BaseModel):
 
         sqlite_url = f"sqlite:///{options.sqlite_file_name}"
         connect_args = { "check_same_thread": False }
-        engine = create_engine(sqlite_url, echo=False, connect_args=connect_args)
+        engine = create_engine(
+            sqlite_url, 
+            echo=False, 
+            connect_args=connect_args,
+            json_serializer=sqla_json_serializer,
+            json_deserializer=sqla_json_deserializer,
+        )
         _logger.info(f'Connected to database {sqlite_url}')
 
         SQLModel.metadata.create_all(engine)

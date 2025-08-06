@@ -1,9 +1,10 @@
 import ray
 import numpy as np
 from lib.job.job import Job
-from lib.job.types import JobRuntimeInfo
 from lib.job.job_instance import JobInstance
-from typing import ClassVar, Tuple, override, Dict, Any, List, Generator, cast
+from typing import ClassVar, Tuple, override, Dict, Any, List, Generator
+
+from lib.options import BackendOptions
 
 class DatasetJob(Job):
     """ Dataset processing job """
@@ -17,7 +18,8 @@ class DatasetJob(Job):
     concurrency: int = 1
     shape: Tuple[int,...] = (10,10)
 
-    def setup(self):
+    def setup(self, options: BackendOptions | None = None) -> Dict[str, Any] | None:
+        self._options = options
         np_data = np.random.uniform(0, 1, self.shape) if self.num_batches <= 1 \
             else [np.random.uniform(0, 1, self.shape) for _ in range(self.num_batches)]
         data = ray.data.from_numpy(np_data)
@@ -45,7 +47,7 @@ class DatasetJob(Job):
         
         return JobInstance.from_output(
             parent=self,
-            kwargs={
+            job_kwargs={
                 'num_batches': self.num_batches,
                 'batch_size': self.batch_size,
                 'concurrency': self.concurrency,
@@ -68,7 +70,7 @@ class DatasetJob(Job):
         for batch in ds.iter_batches():
             yield JobInstance.from_output(
                 parent=self,
-                kwargs={
+                job_kwargs={
                     'num_batches': self.num_batches,
                     'batch_size': self.batch_size,
                     'concurrency': self.concurrency,

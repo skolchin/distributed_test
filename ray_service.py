@@ -1,5 +1,6 @@
 import ray
 import logging
+from ray.exceptions import RayTaskError
 from datetime import datetime
 from sqlmodel import Session, select
 from fastapi.staticfiles import StaticFiles
@@ -13,15 +14,15 @@ from fastapi import (
     HTTPException,
     BackgroundTasks,
 )
-from lib.state import lifespan, BackendState
 from lib.job.job import Job
-from lib.job.job_instance import JobInstance
+from lib.state import lifespan, BackendState
+from lib.job.job_instance import JobInstance, CannotSerializeResult
 from lib.responses import *
 from typing import cast
 
 logging.basicConfig(
-    format='[%(levelname).1s %(asctime)s %(name)s] %(message)s', 
-    level=logging.DEBUG, 
+    format='[%(levelname).1s %(asctime)s %(name)s] %(message)s',
+    level=logging.DEBUG,
     force=True)
 
 logger = logging.getLogger(__name__)
@@ -47,8 +48,8 @@ async def get_index(
 ) -> HTMLResponse:
     """ Generate index.html from template """
     return state.templates.TemplateResponse(
-        request=request, 
-        name='index.html', 
+        request=request,
+        name='index.html',
         context={
         }
     )
@@ -156,6 +157,27 @@ async def get_job_info(
             job_instances=job_instances,
         )
 
+@app.get('/job/result', tags=['job'], operation_id='get_job_result')
+async def get_job_result(
+    job_id: str,
+    state: BackendState = Depends(get_state_from_request)
+) -> JobResultResponse:
+    """ Retrieve single job info """
+    with Session(state.engine) as session:
+        job_instances=session.exec(select(JobInstance).where(JobInstance.job_id == job_id)).all()
+        if not job_instances:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, f'Job {job_id} not found')
+
+        job_type = state.job_types[job_instances[0].job_type]
+        job = job_type['job_cls'](
+            job_id=job_instances[0].job_id,
+        )
+        outputs = [j.output for j in job_instances]
+        return JobResultResponse(
+            job=job,
+            output=outputs,
+        )
+    
 @app.post('/job', tags=['job'], operation_id='submit_job')
 async def submit_job(
     request: JobSubmitRequest,
@@ -163,33 +185,33 @@ async def submit_job(
     state: BackendState = Depends(get_state_from_request),
 ) -> JobInstanceResponse:
     """ Submit new job """
-    
+
     if not request.job_type in state.job_types:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail=f'Unknown job type {request.job_type}')
-    
+
     job_info = state.job_types[request.job_type]
     logger.info(f'Launching job type {request.job_type} of {job_info["job_cls"]}')
 
     job_kwargs = {k: v for k,v in (request.__pydantic_extra__ or {}).items()}
     logger.info(f'Job kwargs: {job_kwargs}')
-    
+
     job = job_info['job_cls'](**job_kwargs)
     logger.info(f'Job ID is {job.job_id}')
 
     async def run_job(job: Job):
         async with state.connection:
-            input = job.setup()
+            input = job.setup(options=state.options)
             task_result = job.run(**(input or {}))
             logger.info(f'Job {job.job_id} has successfully finished')
         return task_result
 
     def task_result_to_job_results(
-            job: Job, 
-            task_result, 
+            job: Job,
+            task_result,
             placeholders: List[JobInstance] | None = None,
             is_background: bool = False,
             mark_finished: bool = True) -> List[JobInstance]:
-        
+
         match task_result:
             case JobInstance():
                 job_results=[task_result]
@@ -215,14 +237,19 @@ async def submit_job(
 
         return cast(List[JobInstance], job_results)
 
-    async def run_job_bg(job: Job, is_background: bool = False, placeholders: List[JobInstance] | None = None):
+    async def run_job_bg(
+            job: Job,
+            is_background: bool = False,
+            placeholders: List[JobInstance] | None = None):
+
         task_result = await run_job(job)
         job_results = task_result_to_job_results(
-            job, 
-            task_result, 
-            placeholders=placeholders, 
+            job,
+            task_result,
+            placeholders=placeholders,
             is_background=is_background,
             mark_finished=True)
+        
         return job_results
 
     as_background = request.as_background and job.supports_background
@@ -230,13 +257,25 @@ async def submit_job(
         # synchronous run, hang up until task is completed
         # TODO: add timeout
         task_result = await run_job(job)
-        job_results = task_result_to_job_results(job, task_result, is_background=False, mark_finished=True)
+        job_results = task_result_to_job_results(
+            job,
+            task_result,
+            is_background=False,
+            mark_finished=True)
     else:
         # save task placeholder
-        job_results = task_result_to_job_results(job, None, is_background=True, mark_finished=False)
+        job_results = task_result_to_job_results(
+            job,
+            None,
+            is_background=True,
+            mark_finished=False)
 
         # asynchronous run
-        background_tasks.add_task(run_job_bg, job=job, is_background=True, placeholders=job_results)
+        background_tasks.add_task(
+            run_job_bg,
+            job=job,
+            is_background=True,
+            placeholders=job_results)
         logger.info(f'Job {job.job_id} has started as a background task')
 
     return JobInstanceResponse(
@@ -257,6 +296,19 @@ async def job_stream(
     state: BackendState = Depends(get_state_from_websocket),
 ):
     raise HTTPException(status.HTTP_501_NOT_IMPLEMENTED, detail='Not implemented')
+
+#
+# Exception handling
+#
+@app.exception_handler(CannotSerializeResult)
+def handle_serialization_error(request: Request, ex: CannotSerializeResult):
+    logger.error(str(ex))
+    raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(ex))
+
+@app.exception_handler(RayTaskError)
+def handle_ray_error(request: Request, ex: RayTaskError):
+    logger.error(str(ex))
+    raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(ex.cause or ex))
 
 #
 # Static files

@@ -1,22 +1,29 @@
 import ray
-import sys
 import pickle
-import numpy as np
+import logging
 from uuid import uuid4
-from pathlib import Path
-from datetime import datetime
+from datetime import datetime, date
 from sqlalchemy import Column, JSON
 from sqlmodel import SQLModel, Field
 from ray.util import get_node_ip_address
 from ray._private.worker import WORKER_MODE
 from pydantic import PrivateAttr
-from typing import Any, Dict
+from typing import Any, Dict, Tuple
 
-from lib.job.types import JobRuntimeInfo
 from lib.job.job import Job
+from lib.options import BackendOptions
+from lib.job.types import JobRuntimeInfo
+from lib.json_utils import get_size, is_serializable, PYDANTIC_ENCODERS
+
+_logger = logging.getLogger(__name__)
+
+class CannotSerializeResult(Exception):
+    """ Cannot serialize results exception """
+    pass
 
 class JobInstance(SQLModel, table=True):
     """ Job instance """
+
     result_id: int | None = Field(default=None, primary_key=True)
     job_id: str = Field(index=True)
     job_type: str = Field(index=True)
@@ -24,9 +31,14 @@ class JobInstance(SQLModel, table=True):
     finished: datetime | None = Field(default=None)
     runtime_info: JobRuntimeInfo | None = Field(default=None, sa_column=Column(JSON))
     is_background: bool = Field(default=False)
-    kwargs: Dict[str, Any] | None = Field(default=None, sa_column=Column(JSON))
+    job_kwargs: Dict[str, Any] | None = Field(default=None, sa_column=Column(JSON))
     output: Any | None = Field(default=None, repr=False, sa_column=Column(JSON))
+
     _raw_output: Any | None = PrivateAttr(default=None)
+
+    model_config = {
+        'json_encoders': PYDANTIC_ENCODERS,
+    } # type:ignore
 
     @classmethod
     def job_runtime_info(cls) -> JobRuntimeInfo:
@@ -50,82 +62,53 @@ class JobInstance(SQLModel, table=True):
     @classmethod
     def from_job(cls, 
                  parent: Job, 
-                 kwargs: Dict[str, Any] | None = None,
+                 job_kwargs: Dict[str, Any] | None = None,
                  output: Any | None = None) -> 'JobInstance':
+        
         rt = cls.job_runtime_info()
         return cls(
             job_id=parent.job_id,
             job_type=parent.job_type,
             runtime_info=rt,
-            kwargs=kwargs,
+            job_kwargs=job_kwargs,
             _raw_output=output,
-            output=cls._serialize_output(output, node_ip=rt.get('node_ip_address')),
+            output=cls._serialize_output(output, options=parent._options),
         )
 
     @classmethod
     def from_output(cls, 
                     parent: Job, 
-                    kwargs: Dict[str, Any],
+                    job_kwargs: Dict[str, Any],
                     output: Any) -> 'JobInstance':
         rt = cls.job_runtime_info()
         return cls(
             job_id=parent.job_id,
             job_type=parent.job_type,
             runtime_info=rt,
-            kwargs=kwargs,
-            _raw_output=output,
-            output=cls._serialize_output(output, node_ip=rt.get('node_ip_address')),
+            job_kwargs=job_kwargs,
+            output=cls._serialize_output(output, options=parent._options),
         )
 
     @classmethod
-    def _serialize_output(cls, data: Any, node_ip: str | None = None) -> Any:
+    def _serialize_output(cls, 
+                          data: Any, 
+                          options: BackendOptions | None = None) -> Any:
 
-        def get_size(x) -> int:
-            match x:
-                case np.ndarray():
-                    return x.nbytes
+        max_inline_result_size = options.max_inline_result_size if options else 0
+        result_storage_uri = options.result_storage_uri if options else None
 
-                case list() | tuple():
-                    return sum([get_size(v) for v in x]) + sys.getsizeof(x)
-                
-                case dict():
-                    return sum([get_size(v) for v in x.values()]) + sys.getsizeof(x)
+        return_inline = True
+        if max_inline_result_size and (sz := get_size(data)) > max_inline_result_size:
+            return_inline = False
 
-                case _:
-                    return sys.getsizeof(x)
+        if return_inline and not is_serializable(data):
+            return_inline = False
 
-        def make_serializable(x):
-            match x:
-                case np.ndarray():
-                    return x.tolist()
+        if not return_inline and not result_storage_uri:
+            raise CannotSerializeResult('Cannot serialize results to storage as `result_storage_uri` is not set')
 
-                case list() | tuple():
-                    return [make_serializable(v) for v in x]
-                
-                case dict():
-                    return {k: make_serializable(v) for k,v in x.items()}
-
-                case int() | float() | bool() | str() | None:
-                    return x
-                
-                case _:
-                    raise ValueError(f'Non serializable: {type(x)}')
+        if return_inline:
+            return data
         
-        return make_serializable(data)
-    
-        # size = get_size(data)
-        # if size <= 1024:
-        #     # return as is with conversion
-        #     try:
-        #         return make_serializable(data)
-        #     except ValueError:
-        #         # non-serializable, go on with pickling
-        #         pass
-        
-        # # pickle to disk and return path/URL
-        # # TODO: security
-        # fn = Path('.').absolute().joinpath('www', 'data', f'{uuid4()}.pkl').relative_to(Path('.').absolute())
-        # with open(fn, 'wb') as fp:
-        #     pickle.dump(data, fp)
-
-        # return str(fn) if not node_ip else f'http://{node_ip}:8000/{str(fn).replace("www/","")}'
+        # TODO: serialization to Redis
+        return None

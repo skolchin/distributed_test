@@ -53,5 +53,16 @@ class JobSubmitRequest(BaseModel):
 class JobInstanceResponse(BaseModel):
     """ List of jobs result response """
     jobs: Sequence[Job] = Field(default_factory=list)
+    """ List of jobs """
+
     job_instances: Sequence[JobInstance] = Field(default_factory=list)
+    """ List of job instances """
+
+class JobResultResponse(BaseModel):
+    """ Single job result response """
+    job: Job
+    """ Job info """
+
+    output: Any | None = None
+    """ job result """
 
