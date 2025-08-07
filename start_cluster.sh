@@ -12,6 +12,10 @@ if [ $# -ne 1 ]; then
 else
     echo "Starting cluster at ${1}"
 
+    #export GLOO_SOCKET_IFNAME=eno1
+    #export VLLM_LOGGING_LEVEL=DEBUG
+    #export VLLM_HOST_IP=${1}
+
     ray start \
         --node-ip-address=$1 \
         --node-manager-port 43403 \
