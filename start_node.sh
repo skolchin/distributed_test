@@ -10,7 +10,7 @@ if [ $# -ne 1 ]; then
 else
     echo "Starting node with cluster at ${1}"
 
-    ray start \
+    NCCL_P2P_DISABLE=1 GLOO_SOCKET_IFNAME=wlo1 ray start \
         --address=${1}:6379 \
         --resources='{"custom-resource": 1}' \
         --node-manager-port 44403 \
@@ -22,6 +22,3 @@ else
         --verbose
 
 fi
-
-echo ""
-echo "Use 'ray stop' to stop the node"

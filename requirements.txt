@@ -8,7 +8,7 @@ torchvision
 torchmetrics
 
 # vllm
-vllm
+#vllm
 #flashinfer-python
 
 # jupyter
