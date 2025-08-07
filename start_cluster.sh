@@ -26,6 +26,3 @@ else
         # --dashboard-host 0.0.0.0 \
 
 fi
-
-echo ""
-echo "Use 'ray stop' to stop the cluster"

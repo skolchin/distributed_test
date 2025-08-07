@@ -1,11 +1,15 @@
 # ray
-ray[data,train,tune,serve]==2.44.1
+ray[data,train,tune,serve]==2.48
 pynvml
 
 # torch
 torch
 torchvision
 torchmetrics
+
+# vllm
+vllm
+#flashinfer-python
 
 # jupyter
 nbformat
