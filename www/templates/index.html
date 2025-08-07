@@ -190,7 +190,7 @@
         .modal-content {
             background-color: white;
             border-radius: 5px;
-            width: 700px;
+            width: 800px;
             max-width: 90%;
             max-height: 90vh;
             overflow-y: auto;
@@ -263,40 +263,6 @@
             margin-bottom: 15px;
         }
         
-        .job-row {
-            cursor: pointer;
-        }
-        
-        .job-row .toggle-instances {
-            margin-right: 6px;
-            display: inline-block;
-            width: 14px;
-            text-align: center;
-        }
-        
-        .instance-row {
-            display: none;
-            background-color: #f9f9f9;
-        }
-        
-        .instance-row.expanded {
-            display: table-row;
-        }
-        
-        .job-expanded .toggle-instances::after {
-            content: "▼";
-            font-size: 10px;
-        }
-        
-        .job-collapsed .toggle-instances::after {
-            content: "▶";
-            font-size: 10px;
-        }
-        
-        .job-expanded {
-            background-color: #f0f7ff;
-        }
-        
         .parameters-section {
             margin-top: 10px;
             border: 1px solid #eee;
@@ -346,15 +312,29 @@
             cursor: pointer;
         }
         
-        .instance-table {
+        .tasks-table {
             width: 100%;
             margin-top: 10px;
             font-size: 13px;
+            border-collapse: collapse;
         }
         
-        .instance-table th, 
-        .instance-table td {
+        .tasks-table th, 
+        .tasks-table td {
             padding: 6px 8px;
+            border: 1px solid #ddd;
+        }
+        
+        .tasks-table th {
+            background-color: #f5f5f5;
+        }
+        
+        .task-status {
+            display: inline-block;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-size: 11px;
+            font-weight: 500;
         }
     </style>
 </head>
@@ -426,9 +406,7 @@
                             <th>Job ID</th>
                             <th>Type</th>
                             <th>Status</th>
-                            <th>Started</th>
-                            <th>Finished</th>
-                            <th>Instances</th>
+                            <th>Tasks</th>
                             <th>Actions</th>
                         </tr>
                     </thead>
@@ -493,21 +471,39 @@
         // Helper function to determine job status
         function getJobStatus(job) {
             if (job.finished) {
-                return job.output ? 'completed' : 'failed';
+                return 'completed';
             }
             return job.started ? 'running' : 'pending';
         }
         
-        // Helper function to get overall job status from multiple instances
-        function getOverallJobStatus(instances) {
-            if (!instances || instances.length === 0) return 'pending';
+        // Helper function to get overall job status from tasks
+        function getOverallJobStatus(tasks) {
+            if (!tasks || tasks.length === 0) return 'pending';
             
-            const statuses = instances.map(instance => getJobStatus(instance));
+            const statuses = tasks.map(task => getJobStatus(task));
             
             if (statuses.includes('failed')) return 'failed';
             if (statuses.includes('running')) return 'running';
             if (statuses.every(status => status === 'completed')) return 'completed';
             return 'pending';
+        }
+        
+        // Helper function to count tasks by status
+        function countTasksByStatus(tasks) {
+            const counts = {
+                running: 0,
+                completed: 0,
+                failed: 0,
+                pending: 0
+            };
+            
+            if (!tasks) return counts;
+            
+            tasks.forEach(task => {
+                counts[getJobStatus(task)]++;
+            });
+            
+            return counts;
         }
         
         // Helper function to update last updated time
@@ -516,42 +512,29 @@
             lastUpdatedEl.textContent = `Last updated: ${now.toLocaleString()}`;
         }
         
-        // Helper function to count instances by status
-        function countInstancesByStatus(instances) {
-            const counts = {
-                running: 0,
-                completed: 0,
-                failed: 0,
-                pending: 0
-            };
-            
-            if (!instances) return counts;
-            
-            instances.forEach(instance => {
-                counts[getJobStatus(instance)]++;
-            });
-            
-            return counts;
-        }
-        
-        // Helper function to check if a string is a URL
-        function isUrl(str) {
+        // Helper function to download job result
+        async function downloadJobResult(jobId, taskId = null) {
             try {
-                new URL(str);
-                return true;
-            } catch (_) {
-                return false;
+                let url = `${API_BASE_URL}job/result?job_id=${jobId}&chunked=false`;
+                
+                const response = await fetch(url);
+                if (!response.ok) {
+                    throw new Error('Failed to download result');
+                }
+                
+                const blob = await response.blob();
+                const downloadUrl = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = downloadUrl;
+                a.download = `job_${jobId}${taskId ? `_task_${taskId}` : ''}_result.bin`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                window.URL.revokeObjectURL(downloadUrl);
+            } catch (error) {
+                console.error('Error downloading job result:', error);
+                alert('Error downloading job result: ' + error.message);
             }
-        }
-        
-        // Helper function to download a file from URL
-        function downloadFile(url, filename) {
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = filename || 'download';
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
         }
         
         // Add parameter row to the form
@@ -580,13 +563,15 @@
                 // Clear existing options
                 jobTypeSelect.innerHTML = '<option value="">Select a job type</option>';
                 
-                // Add new options (assuming data is an array of job types)
-                data.job_types.forEach(type => {
-                    const option = document.createElement('option');
-                    option.value = type;
-                    option.textContent = type;
-                    jobTypeSelect.appendChild(option);
-                });
+                // Add new options from API response
+                if (data.job_types && data.job_types.length > 0) {
+                    data.job_types.forEach(type => {
+                        const option = document.createElement('option');
+                        option.value = type;
+                        option.textContent = type;
+                        jobTypeSelect.appendChild(option);
+                    });
+                }
                 
                 return data;
             } catch (error) {
@@ -601,29 +586,31 @@
                 const response = await fetch(`${API_BASE_URL}job/list`);
                 const data = await response.json();
                 
-                // Group instances by job_id
-                const jobsMap = new Map();
-                
-                if (data.job_instances && data.job_instances.length > 0) {
-                    data.job_instances.forEach(instance => {
-                        if (!jobsMap.has(instance.job_id)) {
-                            jobsMap.set(instance.job_id, []);
-                        }
-                        jobsMap.get(instance.job_id).push(instance);
-                    });
-                }
-                
                 // Update status counts
                 let runningCount = 0;
                 let completedCount = 0;
                 let failedCount = 0;
                 
-                jobsMap.forEach(instances => {
-                    const status = getOverallJobStatus(instances);
-                    if (status === 'running') runningCount++;
-                    else if (status === 'completed') completedCount++;
-                    else if (status === 'failed') failedCount++;
-                });
+                if (data.jobs && data.jobs.length > 0) {
+                    // Group tasks by job_id
+                    const tasksByJob = {};
+                    if (data.job_instances) {
+                        data.job_instances.forEach(task => {
+                            if (!tasksByJob[task.job_id]) {
+                                tasksByJob[task.job_id] = [];
+                            }
+                            tasksByJob[task.job_id].push(task);
+                        });
+                    }
+                    
+                    data.jobs.forEach(job => {
+                        const tasks = tasksByJob[job.job_id] || [];
+                        const status = getOverallJobStatus(tasks);
+                        if (status === 'running') runningCount++;
+                        else if (status === 'completed') completedCount++;
+                        else if (status === 'failed') failedCount++;
+                    });
+                }
                 
                 runningJobsEl.textContent = runningCount;
                 completedJobsEl.textContent = completedCount;
@@ -632,113 +619,67 @@
                 // Update jobs table
                 jobsTableBody.innerHTML = '';
                 
-                if (jobsMap.size > 0) {
-                    jobsMap.forEach((instances, jobId) => {
-                        const firstInstance = instances[0];
-                        const overallStatus = getOverallJobStatus(instances);
-                        const statusClass = `status-${overallStatus}`;
-                        const statusText = overallStatus.charAt(0).toUpperCase() + overallStatus.slice(1);
+                if (data.jobs && data.jobs.length > 0) {
+                    // Group tasks by job_id
+                    const tasksByJob = {};
+                    if (data.job_instances) {
+                        data.job_instances.forEach(task => {
+                            if (!tasksByJob[task.job_id]) {
+                                tasksByJob[task.job_id] = [];
+                            }
+                            tasksByJob[task.job_id].push(task);
+                        });
+                    }
+                    
+                    data.jobs.forEach(job => {
+                        const tasks = tasksByJob[job.job_id] || [];
+                        const status = getOverallJobStatus(tasks);
+                        const statusClass = `status-${status}`;
+                        const statusText = status.charAt(0).toUpperCase() + status.slice(1);
                         
-                        const instanceCounts = countInstancesByStatus(instances);
+                        const taskCounts = countTasksByStatus(tasks);
                         
-                        // Create job row
-                        const jobRow = document.createElement('tr');
-                        jobRow.className = 'job-row job-collapsed';
-                        jobRow.dataset.jobId = jobId;
-                        jobRow.innerHTML = `
-                            <td>
-                                <span class="toggle-instances"></span>
-                                ${jobId}
-                            </td>
-                            <td>${firstInstance.job_type}</td>
+                        const row = document.createElement('tr');
+                        row.dataset.jobId = job.job_id;
+                        row.innerHTML = `
+                            <td>${job.job_id}</td>
+                            <td>${job.job_type || 'N/A'}</td>
                             <td><span class="job-status ${statusClass}">${statusText}</span></td>
-                            <td>${formatDate(firstInstance.started)}</td>
-                            <td>${formatDate(firstInstance.finished)}</td>
                             <td>
-                                ${instanceCounts.running ? `<span class="job-status status-running">${instanceCounts.running} running</span> ` : ''}
-                                ${instanceCounts.completed ? `<span class="job-status status-completed">${instanceCounts.completed} completed</span> ` : ''}
-                                ${instanceCounts.failed ? `<span class="job-status status-failed">${instanceCounts.failed} failed</span> ` : ''}
-                                ${instanceCounts.pending ? `<span class="job-status status-pending">${instanceCounts.pending} pending</span>` : ''}
+                                ${taskCounts.running ? `<span class="job-status status-running">${taskCounts.running} running</span> ` : ''}
+                                ${taskCounts.completed ? `<span class="job-status status-completed">${taskCounts.completed} completed</span> ` : ''}
+                                ${taskCounts.failed ? `<span class="job-status status-failed">${taskCounts.failed} failed</span> ` : ''}
+                                ${taskCounts.pending ? `<span class="job-status status-pending">${taskCounts.pending} pending</span>` : ''}
                             </td>
                             <td>
-                                <button class="btn btn-primary btn-view-job" data-job-id="${jobId}">View</button>
+                                <button class="btn btn-primary btn-view-job" data-job-id="${job.job_id}">View</button>
                             </td>
                         `;
-                        jobsTableBody.appendChild(jobRow);
-                        
-                        // Add click handler to toggle instances
-                        jobRow.querySelector('.toggle-instances').addEventListener('click', (e) => {
-                            e.stopPropagation();
-                            jobRow.classList.toggle('job-expanded');
-                            jobRow.classList.toggle('job-collapsed');
-                            
-                            // Toggle all instance rows for this job
-                            document.querySelectorAll(`.instance-row[data-job-id="${jobId}"]`).forEach(row => {
-                                row.classList.toggle('expanded');
-                            });
-                        });
-                        
-                        // Create instance rows
-                        instances.forEach((instance, index) => {
-                            const instanceStatus = getJobStatus(instance);
-                            const instanceStatusClass = `status-${instanceStatus}`;
-                            const instanceStatusText = instanceStatus.charAt(0).toUpperCase() + instanceStatus.slice(1);
-                            
-                            const instanceRow = document.createElement('tr');
-                            instanceRow.className = 'instance-row';
-                            instanceRow.dataset.jobId = jobId;
-                            instanceRow.innerHTML = `
-                                <td>Instance ${index + 1}</td>
-                                <td>${instance.job_type}</td>
-                                <td><span class="job-status ${instanceStatusClass}">${instanceStatusText}</span></td>
-                                <td>${formatDate(instance.started)}</td>
-                                <td>${formatDate(instance.finished)}</td>
-                                <td></td>
-                                <td>
-                                    <button class="btn btn-primary btn-view-instance" data-job-id="${jobId}" data-instance-index="${index}">View</button>
-                                </td>
-                            `;
-                            jobsTableBody.appendChild(instanceRow);
-                            
-                            // Add click handler for instance view button
-                            instanceRow.querySelector('.btn-view-instance').addEventListener('click', (e) => {
-                                e.stopPropagation();
-                                currentJobId = e.target.dataset.jobId;
-                                showJobDetails(currentJobId, index);
-                            });
-                        });
+                        jobsTableBody.appendChild(row);
                     });
                     
                     // Add event listeners to view buttons
                     document.querySelectorAll('.btn-view-job').forEach(btn => {
                         btn.addEventListener('click', (e) => {
-                            e.stopPropagation();
                             currentJobId = e.target.dataset.jobId;
-                            showJobDetails(currentJobId);
+                            showJobDetails(currentJobId, data.jobs, data.job_instances);
                         });
                     });
                     
                     // Implement search functionality
                     jobSearchInput.addEventListener('input', () => {
                         const searchTerm = jobSearchInput.value.toLowerCase();
-                        const rows = jobsTableBody.querySelectorAll('.job-row');
+                        const rows = jobsTableBody.querySelectorAll('tr');
                         
                         rows.forEach(row => {
                             const jobId = row.cells[0].textContent.toLowerCase();
                             const jobType = row.cells[1].textContent.toLowerCase();
                             const shouldShow = jobId.includes(searchTerm) || jobType.includes(searchTerm);
                             row.style.display = shouldShow ? '' : 'none';
-                            
-                            // Hide/show instances if parent row is hidden/shown
-                            if (!shouldShow) {
-                                document.querySelectorAll(`.instance-row[data-job-id="${row.dataset.jobId}"]`).forEach(instanceRow => {
-                                    instanceRow.style.display = 'none';
-                                });
-                            }
                         });
                     });
                 } else {
-                    jobsTableBody.innerHTML = '<tr><td colspan="7">No jobs found</td></tr>';
+                    jobsTableBody.innerHTML = '<tr><td colspan="5">No jobs found</td></tr>';
                 }
                 
                 updateLastUpdated();
@@ -748,7 +689,7 @@
                 runningJobsEl.textContent = 'Error';
                 completedJobsEl.textContent = 'Error';
                 failedJobsEl.textContent = 'Error';
-                jobsTableBody.innerHTML = '<tr><td colspan="7">Error loading jobs</td></tr>';
+                jobsTableBody.innerHTML = '<tr><td colspan="5">Error loading jobs</td></tr>';
                 return null;
             }
         }
@@ -837,149 +778,106 @@
             }
         }
         
-        // Show job details in modal
-        async function showJobDetails(jobId, instanceIndex = null) {
-            const jobData = await fetchJobInfo(jobId);
+        // Show job details with tasks
+        async function showJobDetails(jobId, jobsData, jobInstancesData) {
+            // Find the job summary
+            const job = jobsData?.find(j => j.job_id === jobId);
             
-            if (jobData) {
-                let detailsHtml = '';
+            // Find all tasks for this job
+            const tasks = jobInstancesData?.filter(task => task.job_id === jobId) || [];
+            
+            if (job) {
+                const status = getOverallJobStatus(tasks);
                 
-                if (instanceIndex !== null && jobData.job_instances && jobData.job_instances[instanceIndex]) {
-                    // Show specific instance details
-                    const instance = jobData.job_instances[instanceIndex];
-                    const status = getJobStatus(instance);
-                    
-                    detailsHtml = `
-                        <h4>Instance</h4>
-                        <p><small><strong>Job ID:</strong> ${jobId}</small></p>
-                        <p><small><strong>Instance Index:</strong> ${instanceIndex + 1}</small></p>
-                        <p><small><strong>Type:</strong> ${instance.job_type}</small></p>
-                        <p><small><strong>Status:</strong> <span class="job-status status-${status}">${
-                            status.charAt(0).toUpperCase() + status.slice(1)
-                        }</span></small></p>
-                        <p><small><strong>Started:</strong> ${formatDate(instance.started)}</small></p>
-                        <p><small><strong>Finished:</strong> ${formatDate(instance.finished)}</small></p>
-                        <p><small><strong>Background:</strong> ${instance.is_background ? 'Yes' : 'No'}</small></p>
+                let detailsHtml = `
+                    <h4>Job Summary</h4>
+                    <p><strong>Job ID:</strong> ${job.job_id}</p>
+                    <p><strong>Type:</strong> ${job.job_type || 'N/A'}</p>
+                    <p><strong>Overall Status:</strong> <span class="job-status status-${status}">${
+                        status.charAt(0).toUpperCase() + status.slice(1)
+                    }</span></p>
+                    <p><strong>Supports Background:</strong> ${job.supports_background ? 'Yes' : 'No'}</p>
+                `;
+                
+                if (job.requirements) {
+                    detailsHtml += '<h5>Requirements</h5><pre>' + JSON.stringify(job.requirements, null, 2) + '</pre>';
+                }
+
+                // Show tasks table
+                if (tasks.length > 0) {
+                    detailsHtml += '<h5>Args</h5><pre>' + JSON.stringify(tasks[0].job_kwargs, null, 2) + '</pre>';
+                }
+
+                // Show tasks table
+                if (tasks.length > 0) {
+                    detailsHtml += `
+                        <h4>Tasks</h4>
+                        <table class="tasks-table">
+                            <thead>
+                                <tr>
+                                    <th>Task ID</th>
+                                    <th>Status</th>
+                                    <th>Started</th>
+                                    <th>Finished</th>
+                                    <th>Node</th>
+                                    <th>Output</th>
+                                </tr>
+                            </thead>
+                            <tbody>
                     `;
                     
-                    if (instance.runtime_info) {
+                    tasks.forEach(task => {
+                        const taskStatus = getJobStatus(task);
+                        const taskStatusClass = `status-${taskStatus}`;
+                        const taskStatusText = taskStatus.charAt(0).toUpperCase() + taskStatus.slice(1);
+                        
                         detailsHtml += `
-                            <h4>Runtime Info</h4>
-                            <p><small><strong>Ray Job ID:</strong> ${instance.runtime_info.ray_job_id}</small></p>
-                            <p><small><strong>Node:</strong> ${instance.runtime_info.node_ip_address}</small></p>
-                            <p><small><strong>Worker ID:</strong> ${instance.runtime_info.worker_id || 'N/A'}</small></p>
-                            <p><small><strong>Task ID:</strong> ${instance.runtime_info.task_id || 'N/A'}</small></p>
+                            <tr>
+                                <td>${task.instance_id || 'N/A'}</td>
+                                <td><span class="task-status ${taskStatusClass}">${taskStatusText}</span></td>
+                                <td>${formatDate(task.started)}</td>
+                                <td>${formatDate(task.finished)}</td>
+                                <td>${task.runtime_info?.node_ip_address || 'N/A'}</td>
+                                <td>
                         `;
                         
-                        if (instance.runtime_info.resources) {
-                            detailsHtml += '<h4>Resources:</h4><ul>';
-                            for (const [key, value] of Object.entries(instance.runtime_info.resources)) {
-                                detailsHtml += `<li><small><strong>${key}:</strong> ${JSON.stringify(value)}</small></li>`;
+                        if (task.finished) {
+                            if (!task.is_inline_output) {
+                                detailsHtml += `<span class="output-link" data-job-id="${job.job_id}" data-task-id="${task.instance_id}">Download</span>`;
+                            } else {
+                                detailsHtml += 'Inline';
                             }
-                            detailsHtml += '</ul>';
-                        }
-                    }
-                    
-                    if (instance.kwargs) {
-                        detailsHtml += '<h4>Parameters</h4><pre>' + JSON.stringify(instance.kwargs, null, 2) + '</pre>';
-                    }
-                    
-                    if (instance.output) {
-                        if (isUrl(instance.output)) {
-                            detailsHtml += `
-                                <h4>Output</h4>
-                                <p>Output is available at: <span class="output-link" data-url="${instance.output}">Download output</span></p>
-                            `;
                         } else {
-                            detailsHtml += '<h4>Output</h4><pre>' + JSON.stringify(instance.output, null, 2) + '</pre>';
+                            detailsHtml += 'None';
                         }
-                    }
+                        
+                        detailsHtml += `</td></tr>`;
+                    });
                     
-                    // Only show cancel button for running/pending instances
-                    if (status === 'running' || status === 'pending') {
-                        cancelJobBtn.style.display = 'inline-block';
-                        cancelJobBtn.dataset.jobId = jobId;
-                        cancelJobBtn.dataset.instanceIndex = instanceIndex;
-                    } else {
-                        cancelJobBtn.style.display = 'none';
-                    }
+                    detailsHtml += `</tbody></table>`;
                 } else {
-                    // Show job overview with all instances
-                    const overallStatus = getOverallJobStatus(jobData.job_instances);
-                    const instanceCounts = countInstancesByStatus(jobData.job_instances);
-                    
-                    detailsHtml = `
-                        <h4>Job Overview</h4>
-                        <p><strong>Job ID:</strong> ${jobId}</p>
-                        <p><strong>Type:</strong> ${jobData.job_instances?.[0]?.job_type || 'N/A'}</p>
-                        <p><strong>Overall Status:</strong> <span class="job-status status-${overallStatus}">${
-                            overallStatus.charAt(0).toUpperCase() + overallStatus.slice(1)
-                        }</span></p>
-                        <p><strong>Instances:</strong></p>
-                        <ul>
-                            <li><span class="job-status status-running">${instanceCounts.running} running</span></li>
-                            <li><span class="job-status status-completed">${instanceCounts.completed} completed</span></li>
-                            <li><span class="job-status status-failed">${instanceCounts.failed} failed</span></li>
-                            <li><span class="job-status status-pending">${instanceCounts.pending} pending</span></li>
-                        </ul>
-                    `;
-                    
-                    if (jobData.job_instances && jobData.job_instances.length > 0) {
-                        detailsHtml += '<table class="instance-table"><thead><tr>';
-                        detailsHtml += '<th>#</th><th>Status</th><th>Started</th><th>Finished</th><th>Node</th><th>Actions</th>';
-                        detailsHtml += '</tr></thead><tbody>';
-                        
-                        jobData.job_instances.forEach((instance, index) => {
-                            const status = getJobStatus(instance);
-                            detailsHtml += `
-                                <tr>
-                                    <td>${index + 1}</td>
-                                    <td><span class="job-status status-${status}">${
-                                        status.charAt(0).toUpperCase() + status.slice(1)
-                                    }</span></td>
-                                    <td>${formatDate(instance.started)}</td>
-                                    <td>${formatDate(instance.finished)}</td>
-                                    <td>${instance.runtime_info?.node_ip_address || 'N/A'}</td>
-                                    <td>
-                                        <button class="btn btn-primary btn-view-instance" data-job-id="${jobId}" data-instance-index="${index}">Details</button>
-                                    </td>
-                                </tr>
-                            `;
-                        });
-                        
-                        detailsHtml += '</tbody></table>';
-                    }
-                    
-                    // Only show cancel button if any instances are running/pending
-                    if (overallStatus === 'running' || overallStatus === 'pending') {
-                        cancelJobBtn.style.display = 'inline-block';
-                        cancelJobBtn.dataset.jobId = jobId;
-                        delete cancelJobBtn.dataset.instanceIndex;
-                    } else {
-                        cancelJobBtn.style.display = 'none';
-                    }
+                    detailsHtml += '<p>No tasks found for this job.</p>';
                 }
                 
                 jobDetailsContent.innerHTML = detailsHtml;
                 jobDetailsModal.style.display = 'flex';
                 
-                // Add click handlers for instance view buttons in modal
-                jobDetailsContent.querySelectorAll('.btn-view-instance').forEach(btn => {
-                    btn.addEventListener('click', (e) => {
+                // Add click handlers for download links
+                jobDetailsContent.querySelectorAll('.output-link').forEach(link => {
+                    link.addEventListener('click', (e) => {
                         const jobId = e.target.dataset.jobId;
-                        const instanceIndex = parseInt(e.target.dataset.instanceIndex);
-                        showJobDetails(jobId, instanceIndex);
+                        const taskId = e.target.dataset.taskId;
+                        downloadJobResult(jobId, taskId);
                     });
                 });
                 
-                // Add click handler for output download links
-                jobDetailsContent.querySelectorAll('.output-link').forEach(link => {
-                    link.addEventListener('click', (e) => {
-                        const url = e.target.dataset.url;
-                        const filename = `job_${jobId}_output` + (instanceIndex !== null ? `_instance_${instanceIndex + 1}` : '') + '.dat';
-                        downloadFile(url, filename);
-                    });
-                });
+                // Only show cancel button for running/pending jobs
+                if (status === 'running' || status === 'pending') {
+                    cancelJobBtn.style.display = 'inline-block';
+                    cancelJobBtn.dataset.jobId = job.job_id;
+                } else {
+                    cancelJobBtn.style.display = 'none';
+                }
             } else {
                 jobDetailsContent.innerHTML = '<p>Error loading job details</p>';
                 jobDetailsModal.style.display = 'flex';

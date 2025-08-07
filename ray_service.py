@@ -4,7 +4,6 @@ from ray.exceptions import RayTaskError
 from datetime import datetime
 from sqlmodel import Session, select
 from fastapi.staticfiles import StaticFiles
-from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse, HTMLResponse, Response
 from fastapi import (
     status,
@@ -107,16 +106,16 @@ async def get_node_status(
 #     raise HTTPException(status.HTTP_501_NOT_IMPLEMENTED, detail='Not implemented')
 
 #
-# Jobs
+# Compute jobs
 #
-@app.get('/job/types', tags=['job'], operation_id='list_job_types')
+@app.get('/job/types', tags=['compute'], operation_id='list_job_types')
 async def get_job_types_list(
     state: BackendState = Depends(get_state_from_request)
 ) -> JobTypesResponse:
     """ Retrieve available job types """
     return JobTypesResponse(job_types=list(state.job_types.keys()))
 
-@app.get('/job/list', tags=['job'], operation_id='list_jobs')
+@app.get('/job/list', tags=['compute'], operation_id='list_jobs')
 async def get_job_list(
     state: BackendState = Depends(get_state_from_request)
 ) -> JobInstanceResponse:
@@ -131,14 +130,14 @@ async def get_job_list(
                 if not j.job_id in jobs:
                     job_type = state.job_types[j.job_type]
                     jobs[j.job_id] = job_type['job_cls'](
-                        job_id=job_instances[0].job_id,
+                        job_id=j.job_id,
                     )
         return JobInstanceResponse(
             jobs=list(jobs.values()),
             job_instances=job_instances,
         )
 
-@app.get('/job', tags=['job'], operation_id='get_job_info')
+@app.get('/job', tags=['compute'], operation_id='get_job_info')
 async def get_job_info(
     job_id: str,
     state: BackendState = Depends(get_state_from_request)
@@ -158,10 +157,11 @@ async def get_job_info(
             job_instances=job_instances,
         )
 
-@app.get('/job/result', tags=['job'], operation_id='get_job_result')
+@app.get('/job/result', tags=['compute'], operation_id='get_job_result')
 async def get_job_result(
     job_id: str,
-    chunk_no: int=-1,
+    chunked: bool = True,
+    chunk_no: int = -1,
     state: BackendState = Depends(get_state_from_request)
 ) -> Response:
     """ Retrieve single job info """
@@ -170,18 +170,19 @@ async def get_job_result(
         if not job_instances:
             raise HTTPException(status.HTTP_404_NOT_FOUND, f'Job {job_id} not found')
 
-        # job_type = state.job_types[job_instances[0].job_type]
-        # job = job_type['job_cls'](
-        #     job_id=job_instances[0].job_id,
-        # )
-        # outputs = [j.get_output(state.options) for j in job_instances]
-
         import io
         stream = io.BytesIO()
         for j in job_instances:
             stream.write(j.get_output(state.options) or b'')
         stream.seek(0)
         buf = stream.getvalue()
+
+        if not chunked:
+            return Response(
+                content=buf,
+                status_code=status.HTTP_206_PARTIAL_CONTENT,
+                media_type='application/octet-stream',
+            )
 
         page_size = state.options.max_inline_result_size
         max_chunk = int(len(buf) / page_size + 1)
@@ -204,7 +205,7 @@ async def get_job_result(
             media_type='application/octet-stream',
         )
     
-@app.post('/job', tags=['job'], operation_id='submit_job')
+@app.post('/job', tags=['compute'], operation_id='submit_job')
 async def submit_job(
     request: JobSubmitRequest,
     background_tasks: BackgroundTasks,
@@ -309,7 +310,7 @@ async def submit_job(
         job_instances=job_results
     )
 
-@app.post('/job/cancel', tags=['job'], operation_id='cancel_job')
+@app.post('/job/cancel', tags=['compute'], operation_id='cancel_job')
 async def cancel_job(
     job_id: str,
     state: BackendState = Depends(get_state_from_request)
