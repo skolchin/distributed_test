@@ -1,5 +1,7 @@
 import ray
 import logging
+import numpy as np
+from numpy.typing import NDArray
 from ray.exceptions import RayTaskError
 from datetime import datetime
 from sqlmodel import Session, select
@@ -14,9 +16,8 @@ from fastapi import (
     HTTPException,
     BackgroundTasks,
 )
-from lib.job.job import Job
+from lib.job.job import Job, JobInstance, CannotSerializeResult
 from lib.state import lifespan, BackendState
-from lib.job.job_instance import JobInstance, CannotSerializeResult
 from lib.responses import *
 from typing import cast
 
@@ -222,13 +223,13 @@ async def submit_job(
     job_kwargs = {k: v for k,v in (request.__pydantic_extra__ or {}).items()}
     logger.info(f'Job kwargs: {job_kwargs}')
 
-    job = job_info['job_cls'](**job_kwargs)
+    job: Job = job_info['job_cls'](options=state.options)
     logger.info(f'Job ID is {job.job_id}')
 
     async def run_job(job: Job):
         async with state.connection:
-            input = job.setup(options=state.options)
-            task_result = job.run(**(input or {}))
+            input = job.setup()
+            task_result = job.run(input=input)
             logger.info(f'Job {job.job_id} has successfully finished')
         return task_result
 
@@ -242,12 +243,10 @@ async def submit_job(
         match task_result:
             case JobInstance():
                 job_results=[task_result]
-            case tuple() | list() if not len(task_result):
-                job_results=[]
-            case tuple() | list() if isinstance(task_result[0], JobInstance):
-                job_results=task_result
-            case _:
+            case np.ndarray():
                 job_results=[JobInstance.from_job(job, output=task_result)]
+            case _:
+                raise Exception(f'Invalid task result type {type(task_result)}')
 
         dt_now = datetime.now()
         with Session(state.engine) as session:
@@ -279,7 +278,7 @@ async def submit_job(
         
         return job_results
 
-    as_background = request.as_background and job.supports_background
+    as_background = request.as_background and job.cls_supports_background
     if not as_background:
         # synchronous run, hang up until task is completed
         # TODO: add timeout
