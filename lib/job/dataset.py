@@ -12,7 +12,6 @@ class DatasetJob(Job):
     requirements: Dict[str, Any] = { 'num_cpus': 1  }
     supports_background: bool = True
 
-
     def setup(self, num_batches: int, shape: Tuple[int,...]) -> ray.data.Dataset:
         np_data = np.random.uniform(0, 1, shape) if num_batches <= 1 \
             else [np.random.uniform(0, 1, shape) for _ in range(num_batches)]
