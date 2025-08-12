@@ -10,11 +10,12 @@ from uuid import uuid4
 from pathlib import Path
 from sqlalchemy import JSON
 from datetime import datetime
+from types import GeneratorType, AsyncGeneratorType
 from functools import cached_property
 from ray.util import get_node_ip_address
 from ray._private.worker import WORKER_MODE
 from sqlmodel import SQLModel, Field, Relationship
-from typing import Any, Dict, List, TypedDict, Type, ClassVar, Generator, Tuple, cast, Callable
+from typing import Any, Dict, List, TypedDict, Type, ClassVar, AsyncGenerator, Tuple, cast, Callable
 
 from lib.options import Options
 from lib.job.types import JobRuntimeInfo
@@ -29,8 +30,13 @@ _JobFuncT = Callable[..., Any]
 """ Job execution function """
 
 class CannotSerializeResult(Exception):
-    """ Cannot serialize results exception """
+    """ Cannot serialize task results """
     pass
+
+class InvalidResultType(Exception):
+    """ Invalid result type error """
+    pass
+
 
 class JobType(TypedDict):
     """ Structured job type info """
@@ -86,6 +92,17 @@ class Job(JobBase, table=True):
     _func: _JobFuncT | None = None
     """ Function to be executed (private) """
 
+    def _result_to_tasks(self, options: Options, is_background: bool, result: Any) -> List['Task']:
+        match result:
+            case Task():
+                return [result._update(is_background=is_background)]
+
+            case list() | tuple() if len(result) and isinstance(result[0], Task):
+                return list([cast(Task, r)._update(is_background=is_background) for r in result])
+            
+            case _:
+                return [Task.from_output(self, options, is_background=is_background, output=result)]
+
     def run(self, 
             options: Options,
             is_background: bool = False,
@@ -100,29 +117,67 @@ class Job(JobBase, table=True):
         result = self._func(self, job_kwargs, options)
         match result:
             case ray.ObjectRef():
-                result = ray.get(result)
+                return self._result_to_tasks(options, is_background, ray.get(result))
 
             case list() | tuple() if len(result) and isinstance(result[0], ray.ObjectRef):
-                result = ray.get(cast(List[ray.ObjectRef], result))
+                return self._result_to_tasks(options, is_background, ray.get(cast(List[ray.ObjectRef], result)))
 
-        match result:
-            case Task():
-                return [result._update(is_background=is_background)]
+            case ray.ObjectRefGenerator():
+                _logger.warning(f'Job {self.job_id}: job function returns generator object while running in sync mode. Use streaming mode for better performance')
+                return self._result_to_tasks(options, is_background, [ray.get(ref) for ref in result])
 
-            case list() | tuple() if len(result) and isinstance(result[0], Task):
-                return list([cast(Task, r)._update(is_background=is_background) for r in result])
-            
+            case GeneratorType():
+                _logger.warning(f'Job {self.job_id}: job function returns generator object while running in sync mode. Use streaming mode for better performance')
+                return self._result_to_tasks(options, is_background, [ref for ref in result])
+
+            case AsyncGeneratorType():
+                raise InvalidResultType(f'Job {self.job_id}: cannot run with async generator in sync mode. Use streaming mode.')
+
             case _:
-                return [Task.from_output(self, options, is_background=is_background, output=result)]
+                return self._result_to_tasks(options, is_background, result)
 
     async def stream(self, 
             options: Options,
             is_background: bool = False,
             **job_kwargs,
-            ):
-        """ Start a job in streaming mode """
-        result = self.run(options, is_background, **job_kwargs)
-        yield result
+            ) -> AsyncGenerator['Task', None]:
+        """ Start a job in streaming (generator) mode """
+
+        assert self._func
+        if job_kwargs:
+            self.job_kwargs = job_kwargs.copy()
+
+        result = self._func(self, job_kwargs, options)
+        match result:
+            case ray.ObjectRef():
+                _logger.warning(f'Job {self.job_id}: streaming is not supported by job function')
+                for t in self._result_to_tasks(options, is_background, ray.get(result)):
+                    yield t
+
+            case list() | tuple() if len(result) and isinstance(result[0], ray.ObjectRef):
+                _logger.warning(f'Job {self.job_id}: streaming is not supported by job function')
+                for t in self._result_to_tasks(options, is_background, ray.get(cast(List[ray.ObjectRef], result))):
+                    yield t
+
+            case GeneratorType():
+                _logger.info(f'Job {self.job_id}: sync streaming mode is supported')
+                for ref in result:
+                    yield self._result_to_tasks(options, is_background, ref)[0]
+
+            case AsyncGeneratorType():
+                _logger.info(f'Job {self.job_id}: async streaming mode is supported')
+                async for ref in result:
+                    yield self._result_to_tasks(options, is_background, await ref)[0]
+
+            case ray.ObjectRefGenerator():
+                _logger.info(f'Job {self.job_id}: native streaming mode is supported')
+                async for ref in result:
+                    yield self._result_to_tasks(options, is_background, await ref)[0]
+
+            case _:
+                _logger.warning(f'Job {self.job_id}: streaming is not supported by job function')
+                for t in self._result_to_tasks(options, is_background, result):
+                    yield t
 
     @classmethod
     def job_types(cls) -> List[JobType]:
@@ -223,7 +278,6 @@ class Task(TaskBase, table=True):
         rt['worker_id'] = ctx.get_worker_id()
         rt['node_ip_address'] = get_node_ip_address()
 
-        _logger.debug(f'Worker is in {ctx.worker.mode} mode')
         if ctx.worker.mode == WORKER_MODE:
             rt['task_id'] = ctx.get_task_id()
             rt['resources'] = ctx.get_assigned_resources()
@@ -239,9 +293,11 @@ class Task(TaskBase, table=True):
                     parent: Job,
                     options: Options,
                     output: Any,
-                    is_background: bool=False) -> 'Task':
+                    is_background: bool = False,
+                    output_ref: str | None = None) -> 'Task':
         rt = cls.job_runtime_info()
-        data, inline, ttl, ref_id = cls._serialize_output(parent, options, rt, output)
+
+        data, inline, ttl, ref_id = cls._serialize_output(parent, options, rt, output_ref, output)
         return cls(
             job_id=parent.job_id,
             job=parent,
@@ -263,6 +319,7 @@ class Task(TaskBase, table=True):
         parent: Job,
         options: Options,
         rt: JobRuntimeInfo,
+        fallback_task_id: str | None,
         data: Any) -> Tuple[Any, bool, int, str | None]:
 
         max_inline_result_size = options.max_inline_result_size or 0
@@ -283,13 +340,14 @@ class Task(TaskBase, table=True):
         if return_inline:
             return data, True, 0, None
 
-        if not (ref_id := rt.get('task_id')):
-            raise CannotSerializeResult(f'Task ID is empty')
+        if not (ref_id := rt.get('task_id') or fallback_task_id):
+            _logger.warning(f'Job {parent.job_id}: neither runtime task_id not fallback task_id is available, will use random UUID for results storage')
+            ref_id = str(uuid4())
 
         if not result_storage_uri:
-            raise CannotSerializeResult('Cannot serialize results to storage as `result_storage_uri` is not set')
+            raise CannotSerializeResult(f'Job {parent.job_id}: cannot serialize job results to storage as `result_storage_uri` is not set')
 
-        _logger.info(f'Connecting to result backend at {result_storage_uri}')
+        _logger.info(f'Job {parent.job_id}: connecting to result backend at {result_storage_uri}')
         redis_cli = redis.Redis.from_url(result_storage_uri)
 
         redis_cli.set(
@@ -327,6 +385,7 @@ def job(
     job_type: str | None = None,
     supports_background: bool = True,
     supports_batches: bool = True,
+    supports_remote_run: bool = True,
     requirements: Dict[str, Any] | None = None,
     ray_kwargs: Dict[str, Any] | None = None,
     setup_func: _JobSetupT | None = None):
@@ -344,23 +403,28 @@ def job(
 
         def run_job(job: Job, kwargs: Dict[str, Any], options: Options):
             if setup_func:
-                _logger.debug(f'Calling setup() with {kwargs}')
+                _logger.debug(f'Job {job.job_id}: calling setup() with {kwargs}')
                 setup_kwargs = setup_func(job, options, **kwargs)
                 kwargs = (kwargs or {}) | (setup_kwargs or {})
 
-            has_batches = kwargs.pop('has_batches', False)
-            if not supports_batches or not has_batches:
-                _logger.debug(f'Starting single batch with {kwargs}')
-                return run_remote.remote(job, options, **kwargs)
+            if supports_remote_run:
+                _logger.debug(f'Job {job.job_id}: job function has to run remotelly')
+                has_batches = kwargs.pop('has_batches', False)
+                if not supports_batches or not has_batches:
+                    _logger.debug(f'Starting single batch with {kwargs}')
+                    return run_remote.remote(job, options, **kwargs)
 
-            if not 'data' in kwargs or not isinstance(kwargs['data'], (list, tuple, np.ndarray)):
-                _logger.warning('Cannot establish batched execution as setup results are not list-like')
-                return run_remote.remote(job, options, **kwargs)
-            
-            data = kwargs.pop('data')
-            _logger.debug(f'Staring {data.shape[0]} batches with {kwargs}')
-            return [run_remote.remote(job, options, **(kwargs | {'data': d})) for d in data]
+                if not 'data' in kwargs or not isinstance(kwargs['data'], (list, tuple, np.ndarray)):
+                    _logger.warning(f'Job {job.job_id}: cannot establish batched execution as setup results are not list-like')
+                    return run_remote.remote(job, options, **kwargs)
+                
+                data = kwargs.pop('data')
+                _logger.debug(f'Job {job.job_id}: staring {data.shape[0]} batches with {kwargs}')
+                return [run_remote.remote(job, options, **(kwargs | {'data': d})) for d in data]
 
+            _logger.debug(f'Job {job.job_id}: local execution preferred')
+            return wrapped(job, options, **kwargs)
+        
         job = Job(
             job_type=job_type or 'test',
             supports_background=supports_background,

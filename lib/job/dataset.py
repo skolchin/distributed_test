@@ -23,7 +23,6 @@ def dataset_setup(
     
     return {
         'data': ray.data.from_numpy(data),
-        'has_batches': num_batches > 1,
     }
 
 def _compute(batch: Dict[str, np.ndarray]) -> Dict[str, np.ndarray]:
@@ -36,6 +35,7 @@ def _compute(batch: Dict[str, np.ndarray]) -> Dict[str, np.ndarray]:
     job_type='dataset', 
     supports_background=True,
     supports_batches=False,
+    supports_remote_run=False,
     requirements={ 'num_cpus': 1 },
     setup_func=dataset_setup,
 ) # type:ignore
@@ -44,8 +44,8 @@ def dataset_compute(job: Job,
                 data: ray.data.Dataset, 
                 batch_size: int = 0,
                 concurrency: int = 1,
-                **kwargs) -> Task:
-    rows = data.map_batches(
+                **kwargs):
+    batched = data.map_batches(
             _compute,
             batch_format='numpy',
             batch_size=batch_size if batch_size > 0 else 'default',
@@ -54,12 +54,13 @@ def dataset_compute(job: Job,
             num_gpus=job.requirements.get('num_gpus', 0),
             zero_copy_batch=True,
             scheduling_strategy='SPREAD',
-        ).take_all()
-    
-    return Task.from_output(
-        parent=job,
-        options=options,
-        output=rows)
+        )
+    for n, batch in enumerate(batched.iter_batches()):
+        yield Task.from_output(
+            parent=job,
+            options=options,
+            output=batch,
+            output_ref=f'{job.job_id}:{n}')
 
 # class DatasetJob(Job):
 #     """ Dataset processing job """

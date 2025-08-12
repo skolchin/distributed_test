@@ -46,6 +46,9 @@ class JobSubmitRequest(BaseModel):
     as_background: bool = False
     """ Attempt to run in background """
 
+    stream: bool = False
+    """ Attempt to run in streaming mode """
+
     model_config = ConfigDict(extra='allow')
 
 class JobResponse(JobBase):

@@ -222,14 +222,20 @@ async def submit_job(
             session.commit()
             session.expunge(job)
 
-    async def run_job(job: Job, is_background: bool = False) -> List[Task]:
+    async def run_job(job: Job, is_background: bool = False, stream: bool = False) -> List[Task]:
         with Session(state.engine, expire_on_commit=False) as session:
             session.add(job)
             session.commit()
 
             async with state.connection:
-                tasks = job.run(options=state.options, is_background=is_background, **job_kwargs)
-                logger.info(f'Job {job.job_id} has successfully finished')
+                if not stream:
+                    logger.info(f'Job {job.job_id} is to be started in sync mode')
+                    tasks = job.run(options=state.options, is_background=is_background, **job_kwargs)
+                    logger.info(f'Job {job.job_id} has successfully finished')
+                else:
+                    logger.info(f'Job {job.job_id} is to be started in streaming mode')
+                    tasks = [t async for t in job.stream(options=state.options, is_background=is_background, **job_kwargs)]
+                    logger.info(f'Job {job.job_id} has successfully finished')
 
             dt_now = datetime.now()
             for task in tasks:
@@ -244,7 +250,7 @@ async def submit_job(
     as_background = request.as_background and job.supports_background
     if not as_background:
         # synchronous run, hang up until task is completed
-        await run_job(job, is_background=False)
+        await run_job(job, is_background=False, stream=request.stream)
     else:
         # save job
         await save_job(job)
@@ -253,7 +259,8 @@ async def submit_job(
         background_tasks.add_task(
             run_job,
             job=job,
-            is_background=True)
+            is_background=True,
+            stream=request.stream)
         logger.info(f'Job {job.job_id} has started as a background task')
 
     # return await get_job_info(job.job_id, state)
