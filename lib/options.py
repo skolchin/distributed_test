@@ -1,6 +1,6 @@
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-class BackendOptions(BaseSettings):
+class Options(BaseSettings):
     """ Backend options """
 
     model_config = SettingsConfigDict(env_file='.env', extra='allow')

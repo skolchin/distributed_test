@@ -1,14 +1,14 @@
 import ray
 import logging
 from pydantic import BaseModel, PrivateAttr
-from lib.options import BackendOptions
+from lib.options import Options
 from typing import Any
 
 _logger = logging.getLogger(__name__)
 
 
 class RayConnection(BaseModel):
-    options: BackendOptions
+    options: Options
     _client: Any = PrivateAttr(None)
 
     def _ray_init(self):

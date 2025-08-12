@@ -1,6 +1,6 @@
 import ray
 import logging
-import numpy as np
+import asyncio
 from numpy.typing import NDArray
 from ray.exceptions import RayTaskError
 from datetime import datetime
@@ -16,7 +16,7 @@ from fastapi import (
     HTTPException,
     BackgroundTasks,
 )
-from lib.job.job import Job, JobInstance, CannotSerializeResult
+from lib.job.job import Job, Task, CannotSerializeResult
 from lib.state import lifespan, BackendState
 from lib.responses import *
 from typing import cast
@@ -119,44 +119,24 @@ async def get_job_types_list(
 @app.get('/job/list', tags=['compute'], operation_id='list_jobs')
 async def get_job_list(
     state: BackendState = Depends(get_state_from_request)
-) -> JobInstanceResponse:
+) -> JobListResponse:
     """ Retrieve list of jobs """
     with Session(state.engine) as session:
-        job_instances = session.exec(select(JobInstance)).all()
-        if not job_instances:
-            jobs = {}
-        else:
-            jobs = {}
-            for j in job_instances:
-                if not j.job_id in jobs:
-                    job_type = state.job_types[j.job_type]
-                    jobs[j.job_id] = job_type['job_cls'](
-                        job_id=j.job_id,
-                    )
-        return JobInstanceResponse(
-            jobs=list(jobs.values()),
-            job_instances=job_instances,
-        )
+        jobs = session.exec(select(Job)).all()
+        return JobListResponse.from_jobs(jobs)
 
 @app.get('/job', tags=['compute'], operation_id='get_job_info')
 async def get_job_info(
     job_id: str,
-    state: BackendState = Depends(get_state_from_request)
-) -> JobInstanceResponse:
+    state: BackendState = Depends(get_state_from_request),
+) -> JobResponse:
     """ Retrieve single job info """
     with Session(state.engine) as session:
-        job_instances=session.exec(select(JobInstance).where(JobInstance.job_id == job_id)).all()
-        if not job_instances:
+        try:
+            job = session.exec(select(Job).where(Job.job_id == job_id)).one()
+            return JobResponse.from_job(job)
+        except:
             raise HTTPException(status.HTTP_404_NOT_FOUND, f'Job {job_id} not found')
-
-        job_type = state.job_types[job_instances[0].job_type]
-        job = job_type['job_cls'](
-            job_id=job_instances[0].job_id,
-        )
-        return JobInstanceResponse(
-            jobs=[job],
-            job_instances=job_instances,
-        )
 
 @app.get('/job/result', tags=['compute'], operation_id='get_job_result')
 async def get_job_result(
@@ -165,16 +145,17 @@ async def get_job_result(
     chunk_no: int = -1,
     state: BackendState = Depends(get_state_from_request)
 ) -> Response:
-    """ Retrieve single job info """
+    """ Retrieve job results """
     with Session(state.engine) as session:
-        job_instances=session.exec(select(JobInstance).where(JobInstance.job_id == job_id)).all()
-        if not job_instances:
+        try:
+            job = session.exec(select(Job).where(Job.job_id == job_id)).one()
+        except:
             raise HTTPException(status.HTTP_404_NOT_FOUND, f'Job {job_id} not found')
 
         import io
         stream = io.BytesIO()
-        for j in job_instances:
-            stream.write(j.get_output(state.options) or b'')
+        for j in job.tasks:
+            stream.write(j.full_output or bytes())
         stream.seek(0)
         buf = stream.getvalue()
 
@@ -205,115 +186,85 @@ async def get_job_result(
             status_code=status.HTTP_206_PARTIAL_CONTENT,
             media_type='application/octet-stream',
         )
-    
+
 @app.post('/job', tags=['compute'], operation_id='submit_job')
 async def submit_job(
     request: JobSubmitRequest,
     background_tasks: BackgroundTasks,
     state: BackendState = Depends(get_state_from_request),
-) -> JobInstanceResponse:
+) -> JobResponse:
     """ Submit new job """
 
     if not request.job_type in state.job_types:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail=f'Unknown job type {request.job_type}')
 
     job_info = state.job_types[request.job_type]
-    logger.info(f'Launching job type {request.job_type} of {job_info["job_cls"]}')
+    logger.info(f'Launching job type {request.job_type}')
 
     job_kwargs = {k: v for k,v in (request.__pydantic_extra__ or {}).items()}
     logger.info(f'Job kwargs: {job_kwargs}')
 
-    job: Job = job_info['job_cls'](options=state.options)
+    if job_info['job_cls']:
+        job = job_info['job_cls'](
+            job_type=job_info['job_cls'].default_job_type,
+            job_kwargs=job_kwargs,
+        )
+    elif job_info['job_func']:
+        job: Job = job_info['job_func']()
+    else:
+        raise ValueError(f'Neither class nor function')
+    
     logger.info(f'Job ID is {job.job_id}')
 
-    async def run_job(job: Job):
-        async with state.connection:
-            input = job.setup()
-            task_result = job.run(input=input)
-            logger.info(f'Job {job.job_id} has successfully finished')
-        return task_result
-
-    def task_result_to_job_results(
-            job: Job,
-            task_result,
-            placeholders: List[JobInstance] | None = None,
-            is_background: bool = False,
-            mark_finished: bool = True) -> List[JobInstance]:
-
-        match task_result:
-            case JobInstance():
-                job_results=[task_result]
-            case np.ndarray():
-                job_results=[JobInstance.from_job(job, output=task_result)]
-            case _:
-                raise Exception(f'Invalid task result type {type(task_result)}')
-
-        dt_now = datetime.now()
-        with Session(state.engine) as session:
-            for job_result in job_results:
-                job_result.is_background = is_background
-                if mark_finished:
-                    job_result.finished = dt_now
-                session.add(job_result)
-            for job_result in placeholders or []:
-                session.delete(job_result)
+    async def save_job(job: Job):
+        with Session(state.engine, expire_on_commit=False) as session:
+            session.add(job)
             session.commit()
-            for job_result in job_results:
-                session.refresh(job_result)
+            session.expunge(job)
 
-        return cast(List[JobInstance], job_results)
+    async def run_job(job: Job, is_background: bool = False) -> List[Task]:
+        with Session(state.engine, expire_on_commit=False) as session:
+            session.add(job)
+            session.commit()
 
-    async def run_job_bg(
-            job: Job,
-            is_background: bool = False,
-            placeholders: List[JobInstance] | None = None):
+            async with state.connection:
+                tasks = job.run(options=state.options, is_background=is_background, **job_kwargs)
+                logger.info(f'Job {job.job_id} has successfully finished')
 
-        task_result = await run_job(job)
-        job_results = task_result_to_job_results(
-            job,
-            task_result,
-            placeholders=placeholders,
-            is_background=is_background,
-            mark_finished=True)
-        
-        return job_results
+            dt_now = datetime.now()
+            for task in tasks:
+                task.finished = dt_now
+                session.merge(task)
 
-    as_background = request.as_background and job.cls_supports_background
+            session.commit()
+            session.refresh(job)
+            return tasks
+
+
+    as_background = request.as_background and job.supports_background
     if not as_background:
         # synchronous run, hang up until task is completed
-        # TODO: add timeout
-        task_result = await run_job(job)
-        job_results = task_result_to_job_results(
-            job,
-            task_result,
-            is_background=False,
-            mark_finished=True)
+        await run_job(job, is_background=False)
     else:
-        # save task placeholder
-        job_results = task_result_to_job_results(
-            job,
-            None,
-            is_background=True,
-            mark_finished=False)
+        # save job
+        await save_job(job)
 
         # asynchronous run
         background_tasks.add_task(
-            run_job_bg,
+            run_job,
             job=job,
-            is_background=True,
-            placeholders=job_results)
+            is_background=True)
         logger.info(f'Job {job.job_id} has started as a background task')
 
-    return JobInstanceResponse(
-        jobs=[job],
-        job_instances=job_results
-    )
+    # return await get_job_info(job.job_id, state)
+    # return job
+    return JobResponse.from_job(job, add_tasks=not as_background)
 
 @app.post('/job/cancel', tags=['compute'], operation_id='cancel_job')
 async def cancel_job(
     job_id: str,
     state: BackendState = Depends(get_state_from_request)
-) -> JobInstanceResponse:
+) -> JobResponse:
     raise HTTPException(status.HTTP_501_NOT_IMPLEMENTED, detail='Not implemented')
 
 @app.websocket('/job')
@@ -340,4 +291,3 @@ def handle_ray_error(request: Request, ex: RayTaskError):
 # Static files
 #
 app.mount('/static', StaticFiles(directory='www/static', html=True), name='static')
-app.mount('/data', StaticFiles(directory='www/data', html=True), name='data')

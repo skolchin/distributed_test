@@ -1,73 +1,122 @@
-import ray
+import logging
 import numpy as np
-from lib.job.job import Job
-from lib.job.types import JobRuntimeInfo
-from lib.job.job_instance import JobInstance
-from typing import ClassVar, Tuple, override, Dict, Any, List
+from lib.options import Options
+from lib.job.job import job, Job, Task
 
-from lib.options import BackendOptions
+from typing import Tuple, Dict, Any
 
-class ComputeJob(Job):
-    """ Simple CPU-bound compute job """
+_logger = logging.getLogger(__name__)
 
-    job_type: ClassVar[str] = 'compute'
-    requirements: Dict[str, Any] = { 'num_cpus': 1 }
-    supports_background: bool = True
+def compute_setup(
+        job: Job, 
+        options: Options, 
+        num_batches: int = 1, 
+        shape: Tuple[int,int] = (1000,1000), 
+        **kwargs) -> Dict[str, Any]:
+    
+    if kwargs:
+        _logger.warning(f'Extra arguments for compute() will be ignored {kwargs}')
 
-    num_batches: int = 3
-    shape: Tuple[int,...] = (10,10)
+    data = np.random.uniform(0, 1, shape) if num_batches <= 1 \
+        else np.array([np.random.uniform(0, 1, shape) for _ in range(num_batches)])
+    
+    return {
+        'data': data,
+        'has_batches': num_batches > 1,
+    }
 
-    def setup(self, options: BackendOptions | None = None) -> Dict[str, Any] | None:
-        self._options = options
-        data = np.random.uniform(0, 1, self.shape) if self.num_batches <= 1 \
-            else [np.random.uniform(0, 1, self.shape) for _ in range(self.num_batches)]
-        return { 'data': data }
+@job(
+    job_type='compute', 
+    supports_background=True,
+    supports_batches=True,
+    requirements={ 'num_cpus': 1 },
+    setup_func=compute_setup,
+) # type:ignore
+def cpu_compute(job: Job, options: Options, data: np.ndarray, **kwargs) -> Task:
+    x = np.random.rand()
+    return Task.from_output(
+        parent=job,
+        options=options,
+        output=data * x)
 
-    @override
-    def start(self, *, data: np.ndarray) -> ray.ObjectRef  | List[ray.ObjectRef]:
-        remote_kwargs = self.requirements.copy() | {
-            'scheduling_strategy': 'SPREAD',
-        }
-        @ray.remote(**remote_kwargs)
-        def cpu_compute(batch: np.ndarray) -> JobInstance:
-            x = np.random.rand()
-            return JobInstance.from_output(
-                parent=self,
-                job_kwargs={
-                    'num_batches': self.num_batches,
-                    'shape': self.shape,
-                },
-                output=batch*x)
+
+@job(
+    job_type='gpu-compute', 
+    supports_background=True,
+    supports_batches=True,
+    requirements={ 'num_gpus': 1 },
+    setup_func=compute_setup,
+) # type:ignore
+def gpu_compute(job: Job, options: Options, data: np.ndarray, **kwargs) -> Task:
+    import torch
+    x = np.random.rand()
+    x = torch.rand(1).cuda()
+    y = torch.from_numpy(data).cuda()
+    z = (x * y).cpu().detach().numpy()
+    return Task.from_output(
+        parent=job,
+        options=options,
+        output=z
+    )
+
+
+# class ComputeJob(Job):
+#     """ Simple CPU-bound compute job """
+
+#     cls_job_type: ClassVar[str] = 'compute'
+#     cls_requirements: ClassVar[Dict[str, Any]] = { 'num_cpus': 1 }
+
+#     num_batches: int = 3
+#     shape: Tuple[int,...] = (10,10)
+
+#     def setup(self) -> Dict[str, Any] | None:
+#         data = np.random.uniform(0, 1, self.shape) if self.num_batches <= 1 \
+#             else [np.random.uniform(0, 1, self.shape) for _ in range(self.num_batches)]
+#         return { 'data': data }
+
+#     @override
+#     def start(self, input: Dict[str, Any] | None = None) -> ray.ObjectRef  | List[ray.ObjectRef]:
+#         assert (input and 'data' in input)
+#         data = input['data']
+
+#         remote_kwargs = self.requirements.copy() | {
+#             'scheduling_strategy': 'SPREAD',
+#         }
+#         @ray.remote(**remote_kwargs)
+#         def cpu_compute(batch: np.ndarray) -> Task:
+#             x = np.random.rand()
+#             return Task.from_output(
+#                 parent=self,
+#                 output=batch*x)
         
-        return cpu_compute.remote(data) if self.num_batches <= 1 else \
-            [cpu_compute.remote(d) for d in data]
+#         return cpu_compute.remote(data) if self.num_batches <= 1 else \
+#             [cpu_compute.remote(d) for d in data]
 
-class GPUComputeJob(ComputeJob):
-    """ Simple GPU-bound compute job """
-    job_type: ClassVar[str] = 'gpu_compute'
-    requirements: Dict[str, Any] = { 'num_cpus': 0, 'num_gpus': 1 }
+# class GPUComputeJob(ComputeJob):
+#     """ Simple GPU-bound compute job """
+#     cls_job_type: ClassVar[str] = 'gpu_compute'
+#     cls_requirements: ClassVar[Dict[str, Any]] = { 'num_cpus': 0, 'num_gpus': 1 }
 
-    @override
-    def start(self, *, data: np.ndarray) -> ray.ObjectRef  | List[ray.ObjectRef]:
-        import torch
+#     @override
+#     def start(self, input: Dict[str, Any] | None = None) -> ray.ObjectRef  | List[ray.ObjectRef]:
+#         import torch
 
-        remote_kwargs = self.requirements.copy() | {
-            'scheduling_strategy': 'SPREAD',
-        }
-        @ray.remote(**remote_kwargs)
-        def gpu_compute(batch: np.ndarray) -> JobInstance:
-            x = torch.rand(1).cuda()
-            y = torch.from_numpy(batch).cuda()
-            z = (x * y).cpu().detach().numpy()
-            return JobInstance.from_output(
-                parent=self,
-                job_kwargs={
-                    'num_batches': self.num_batches,
-                    'shape': self.shape,
-                },
-                output=z
-            )
+#         assert (input and 'data' in input)
+#         data = input['data']
 
-        return gpu_compute.remote(data) if self.num_batches <= 1 else \
-            [gpu_compute.remote(d) for d in data]
+#         remote_kwargs = self.requirements.copy() | {
+#             'scheduling_strategy': 'SPREAD',
+#         }
+#         @ray.remote(**remote_kwargs)
+#         def gpu_compute(batch: np.ndarray) -> Task:
+#             x = torch.rand(1).cuda()
+#             y = torch.from_numpy(batch).cuda()
+#             z = (x * y).cpu().detach().numpy()
+#             return Task.from_output(
+#                 parent=self,
+#                 output=z
+#             )
+
+#         return gpu_compute.remote(data) if self.num_batches <= 1 else \
+#             [gpu_compute.remote(d) for d in data]
 

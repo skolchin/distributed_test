@@ -7,7 +7,7 @@ from contextlib import asynccontextmanager
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, Field, ConfigDict
 
-from lib.options import BackendOptions
+from lib.options import Options
 from lib.conn import RayConnection
 from lib.job.job import Job, JobType
 from lib.json_utils import sqla_json_serializer, sqla_json_deserializer
@@ -21,7 +21,7 @@ class BackendState(BaseModel):
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
-    options: BackendOptions
+    options: Options
     """ Application options """
 
     templates: Jinja2Templates = Field(exclude=True, repr=False)
@@ -40,17 +40,26 @@ class BackendState(BaseModel):
     def from_defaults(cls) -> 'BackendState':
         """ Instantiate the state object """
 
-        options = BackendOptions(_env_file='.env')   # type:ignore
+        options = Options(_env_file='.env')   # type:ignore
 
         job_types = {}
         for job_info in Job.job_types():
-            job_types[job_info['job_type']] = job_info
+            if job_info['job_cls']:
+                job_type = job_info['job_cls'].default_job_type
+            elif job_info['job_func']:
+                job = job_info['job_func']()
+                assert isinstance(job, Job)
+                job_type = job.job_type
+            else:
+                raise ValueError(f'Neither class nor function')
+
+            job_types[job_type] = job_info
 
         sqlite_url = f"sqlite:///{options.sqlite_file_name}"
         connect_args = { "check_same_thread": False }
         engine = create_engine(
-            sqlite_url, 
-            echo=False, 
+            sqlite_url,
+            echo=False,
             connect_args=connect_args,
             json_serializer=sqla_json_serializer,
             json_deserializer=sqla_json_deserializer,

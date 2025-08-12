@@ -24,6 +24,9 @@ fastapi[standard]
 pydantic_settings
 sqlmodel
 
+# wrapt
+wrapt
+
 # redis
 redis
 

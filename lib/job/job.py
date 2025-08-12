@@ -1,24 +1,32 @@
 import ray
+import wrapt
 import redis
 import pickle
 import inspect
 import logging
 import importlib
+import numpy as np
 from uuid import uuid4
 from pathlib import Path
-from numpy.typing import NDArray
-from datetime import datetime, date
-from sqlalchemy import Column, JSON
+from sqlalchemy import JSON
+from datetime import datetime
+from functools import cached_property
 from ray.util import get_node_ip_address
 from ray._private.worker import WORKER_MODE
 from sqlmodel import SQLModel, Field, Relationship
-from typing import Any, Dict, List, TypedDict, Type, ClassVar, Generator, Tuple, Union
+from typing import Any, Dict, List, TypedDict, Type, ClassVar, Generator, Tuple, cast, Callable
 
-from lib.options import BackendOptions
+from lib.options import Options
 from lib.job.types import JobRuntimeInfo
-from lib.json_utils import get_size, is_serializable, PYDANTIC_ENCODERS
+from lib.json_utils import get_size, is_serializable, CustomJsonEncoder, PYDANTIC_ENCODERS
 
 _logger = logging.getLogger(__name__)
+
+_JobSetupT = Callable[..., Dict[str, Any] | None]
+""" Job setup function """
+
+_JobFuncT = Callable[..., ray.ObjectRef | List[ray.ObjectRef] | None]
+""" Job execution function """
 
 class CannotSerializeResult(Exception):
     """ Cannot serialize results exception """
@@ -29,70 +37,87 @@ class JobType(TypedDict):
     file_name: str
     """ Name of file where job type is defined """
 
-    job_type: str
-    """ Job type name"""
+    job_cls: Type['Job'] | None
+    """ Job class reference (for class-based jobs) """
 
-    job_cls: Type['Job']
-    """ Job class"""
+    job_func: Callable[..., 'Job'] | None
+    """ Job function reference (for functions decorated with `job`) """
 
-JobResultT = Union[None, NDArray, 'JobInstance']
-""" Type of job run results """
+class ErrorInfo(TypedDict):
+    """ Structured error info """
+    code: int
+    """ Error code """
 
-class Job(SQLModel, table=True):
-    """ Job information """
+    error: str | None
+    """ Error message """
 
-    cls_job_type: ClassVar[str] = ''
-    """ Class-level job type. Must be overriden by descendant """
-
-    cls_supports_background: ClassVar[bool] = True
-    """ Class-level background support flag """
+class JobBase(SQLModel):
+    """ Job """
 
     job_id: str = Field(default_factory=lambda: str(uuid4()), primary_key=True)
     """ Job id """
 
-    job_type: str = Field(index=True)
+    job_type: str = Field(index=True, nullable=False)
     """ Instance-level job type """
 
-    requirements: Dict[str, Any] = Field(default_factory=dict)
-    """ Job resource requirements """
-
-    job_kwargs: Dict[str, Any] = Field(default_factory=dict)
+    job_kwargs: Dict[str, Any] = Field(default_factory=dict, nullable=False, sa_type=JSON)
     """ Job run arguments """
 
-    instances: List['JobInstance'] = Relationship(back_populates='job')
-    """ List of job instances """
+    requirements: Dict[str, Any] = Field(default_factory=dict, nullable=False, sa_type=JSON)
+    """ Task requirements """
 
-    _options: BackendOptions | None = None
-    """ Service options (private) """
+    supports_background: bool = Field(default=True, nullable=False)
+    """ Background support """
 
-    def __init__(self, options: BackendOptions | None = None):
-        super().__init__(
-            job_type=self.cls_job_type
-        )
-        self._options = options
 
-    def setup(self) -> Dict[str, Any] | None:
-        """ Sets a job up """
-        pass
+class Job(JobBase, table=True):
+    """ Job """
 
-    def start(self, input: Dict[str, Any] | None) -> ray.ObjectRef | List[ray.ObjectRef] | None:
-        """ Start job with no wait for result """
-        return None
+    default_job_type: ClassVar[str] = 'default'
+    """ Default job type, has to be overridden for descendant classes """
 
-    def run(self, input: Dict[str, Any] | None) -> JobResultT | List[JobResultT]:
-        """ Start job and wait for result """
-        futures = self.start(input)
+    tasks: list['Task'] = Relationship(back_populates='job', sa_relationship_kwargs={"lazy": "subquery"})
+    """ List of job tasks """
+
+    model_config = {
+        'arbitrary_types_allowed': True,
+    } # type:ignore
+
+    _func: _JobFuncT | None = None
+    """ Function to be executed (private) """
+
+    def run(self, 
+            options: Options,
+            is_background: bool = False,
+            **job_kwargs,
+            ) -> List['Task']:
+        """ Start a job and wait for result """
+
+        assert self._func
+        if job_kwargs:
+            self.job_kwargs = job_kwargs.copy()
+        futures = self._func(self, job_kwargs, options)
         if futures is None:
-            return None
-        result = ray.get(futures)
-        return result
+            return []
 
-    def stream(self, input: Dict[str, Any] | None) -> Generator[JobResultT | List[JobResultT], None, None]:
-        """ Start job in streaming mode """
-        futures = self.start(input)
-        if futures is None:
-            return None
         result = ray.get(futures)
+        match result:
+            case Task():
+                return [result._update(is_background=is_background)]
+            
+            case list() | tuple() if len(result) and isinstance(result[0], Task):
+                return list([cast(Task, r)._update(is_background=is_background) for r in result])
+            
+            case _:
+                return [Task.from_output(self, options, is_background=is_background, output=result)]
+
+    async def stream(self, 
+            options: Options,
+            is_background: bool = False,
+            **job_kwargs,
+            ):
+        """ Start a job in streaming mode """
+        result = self.run(options, is_background, **job_kwargs)
         yield result
 
     @classmethod
@@ -106,71 +131,83 @@ class Job(SQLModel, table=True):
                     mod = globals()[mod_name]
                 else:
                     mod = importlib.import_module('.' + mod_name, pkg_name)
+
+                # check for classes inherited from Job
                 for mod_cls_name, mod_cls in inspect.getmembers(mod, inspect.isclass):
                     if mod_cls != cls and issubclass(mod_cls, cls):
                         result.append(
                             JobType(
                                 file_name=str(fn), 
-                                job_type=mod_cls.cls_job_type, 
-                                job_cls=mod_cls))
-                        globals()[mod_name] = mod
+                                job_cls=mod_cls,
+                                job_func=None,
+                            ))
+                        globals()[mod_name + '.' + mod_cls_name] = mod
+
+                # check for `job`-decorated functions
+                for mod_func_name, mod_func in inspect.getmembers(mod, inspect.isfunction):
+                    if isinstance(mod_func, wrapt.FunctionWrapper):
+                        result.append(
+                            JobType(
+                                file_name=str(fn), 
+                                job_cls=None,
+                                job_func=mod_func,
+                            ))
+                        globals()[mod_name + '.' + mod_func_name] = mod
+
 
             except (ModuleNotFoundError, ImportError) as ex:
-                print(ex)
+                _logger.error(f'Error importing {fn}: {ex}')
 
         return result
 
-    # @model_serializer()
-    # def serialize_model(self):
-    #     return {
-    #         'job_type': self.job_type,
-    #         'job_id': self.job_id,
-    #         'supports_background': self.supports_background,
-    #         'requirements': self.requirements,
-    #     }
+class TaskBase(SQLModel):
+    """ Task SQL base """
 
-class JobInstance(SQLModel, table=True):
-    """ Job instance and output """
-
-    instance_id: int | None = Field(default=None, primary_key=True)
-    """ Job instance id """
+    task_id: int | None = Field(default=None, primary_key=True)
+    """ Task id """
 
     job_id: str = Field(foreign_key='job.job_id')
     """ FK to parent table """
 
-    job: Job = Relationship(back_populates='jobinstance')
-    """ Parent job """
-
-    started: datetime = Field(default_factory=datetime.now)
+    started: datetime = Field(default_factory=datetime.now, nullable=False)
     """ datetime when job was started """
 
     finished: datetime | None = Field(default=None)
     """ datetime when job was finished or None if is not """
 
-    is_error: bool = Field(default=False)
-    """ True, if job finished with error """
+    error_info: ErrorInfo = Field(default_factory=lambda : dict(code=0), nullable=False, sa_type=JSON)
+    """ Error info """
 
-    runtime_info: JobRuntimeInfo | None = Field(default=None, sa_column=Column(JSON))
+    runtime_info: JobRuntimeInfo | None = Field(default=None, sa_type=JSON)
     """ Runtime information """
 
-    is_background: bool = Field(default=False)
-    """" True, if job instance was running in background """
+    is_background: bool = Field(default=False, nullable=False)
+    """" True if job instance was running in background """
 
-    is_inline_output: bool = Field(default=True)
+    is_inline_output: bool = Field(default=True, nullable=False)
     """ True if output was stored in the instance itself """
 
-    output_ttl: int = Field(default=0)
+    output_ttl: int = Field(default=0, nullable=False)
     """ Time to keep result in results storage """
 
-    output: Any | None = Field(default=None, repr=False, sa_column=Column(JSON))
-    """ Size-limited output (None if results were stored on results storage) """
+    inline_output: Any | None = Field(default=None, repr=False, sa_type=JSON)
+    """ Size-limited inline output (None if results were stored on results storage) """
 
-    _raw_output: Any | None = None
-    """ Raw ouput (private) """
+    result_ref: str | None = Field(default=None)
+    """ Result reference ID (None if results are inline) """
+
+class Task(TaskBase, table=True):
+    """ Task """
+
+    job: Job = Relationship(back_populates='tasks')
+    """ Parent job """
 
     model_config = {
         'json_encoders': PYDANTIC_ENCODERS,
     } # type:ignore
+
+    _raw_output: Any | None = None
+    """ Raw ouput (private) """
 
     @classmethod
     def job_runtime_info(cls) -> JobRuntimeInfo:
@@ -192,51 +229,42 @@ class JobInstance(SQLModel, table=True):
         return JobRuntimeInfo(**rt)
 
     @classmethod
-    def from_job(cls,
-                 parent: Job,
-                 job_kwargs: Dict[str, Any] | None = None,
-                 output: Any | None = None) -> 'JobInstance':
-
-        rt = cls.job_runtime_info()
-        data, inline, ttl = cls._serialize_output(rt['task_id'] or parent.job_id, output, options=parent._options)
-        return cls(
-            job_id=parent.job_id,
-            job=parent,
-            runtime_info=rt,
-            _raw_output=output,
-            is_inline_output=inline,
-            output_ttl=ttl,
-            output=data,
-        )
-
-    @classmethod
     def from_output(cls,
                     parent: Job,
-                    job_kwargs: Dict[str, Any],
-                    output: Any) -> 'JobInstance':
+                    options: Options,
+                    output: Any,
+                    is_background: bool=False) -> 'Task':
         rt = cls.job_runtime_info()
-        data, inline, ttl = cls._serialize_output(rt['task_id'] or parent.job_id, output, options=parent._options)
+        data, inline, ttl, ref_id = cls._serialize_output(parent, options, rt, output)
         return cls(
             job_id=parent.job_id,
             job=parent,
             runtime_info=rt,
             is_inline_output=inline,
+            is_background=is_background,
             output_ttl=ttl,
-            output=data,
+            inline_output=data,
+            result_ref=ref_id,
         )
+
+    def _update(self, is_background: bool) -> 'Task':
+        self.is_background = is_background
+        return self
 
     @classmethod
     def _serialize_output(
         cls,
-        id: str,
-        data: Any,
-        options: BackendOptions | None = None) -> Tuple[Any, bool, int]:
+        parent: Job,
+        options: Options,
+        rt: JobRuntimeInfo,
+        data: Any) -> Tuple[Any, bool, int, str | None]:
 
-        max_inline_result_size = options.max_inline_result_size if options else 0
-        result_storage_uri = options.result_storage_uri if options else None
+        max_inline_result_size = options.max_inline_result_size or 0
+        result_storage_uri = options.result_storage_uri
+        ttl = options.default_result_ttl or 30*60
 
         if data is None:
-            return None, True, 0
+            return None, True, 0, None
 
         return_inline = True
         sz = get_size(data)
@@ -247,31 +275,93 @@ class JobInstance(SQLModel, table=True):
             return_inline = False
 
         if return_inline:
-            return data, True, 0
+            return data, True, 0, None
+
+        if not (ref_id := rt.get('task_id')):
+            raise CannotSerializeResult(f'Task ID is empty')
 
         if not result_storage_uri:
             raise CannotSerializeResult('Cannot serialize results to storage as `result_storage_uri` is not set')
 
         _logger.info(f'Connecting to result backend at {result_storage_uri}')
-        redis_cli = redis.Redis.from_url(options.result_storage_uri)    #type:ignore
-        ttl = options.default_result_ttl if options else 30*60
+        redis_cli = redis.Redis.from_url(result_storage_uri)
 
         redis_cli.set(
-            name=id,
+            name=ref_id,
             value=pickle.dumps(data),
             ex=ttl,
         )
-        return None, False, ttl
+        return None, False, ttl, ref_id
 
-    def get_output(self, options: BackendOptions) -> bytes | None:
-        if self.output or not options.result_storage_uri:
-            return pickle.dumps(self.output)
+    @cached_property
+    def raw_output(self) -> Any:
+        if self.is_inline_output:
+            return self.inline_output
         
-        _logger.info(f'Connecting to result backend at {options.result_storage_uri}')
-        redis_cli = redis.Redis.from_url(options.result_storage_uri)    # type:ignore
+        if not (uri := self.runtime_info.get('result_storage_uri') if self.runtime_info else None):
+            _logger.error('Cannot retrieve storage results as `result_storage_uri` is not set')
+            return None
+
+        _logger.info(f'Connecting to result backend at {uri}')
+        redis_cli = redis.Redis.from_url(uri)
+
         result = redis_cli.get(name=(self.runtime_info or {}).get('task_id') or self.job.job_id)
         if result is None:
             return None
         
         assert isinstance(result, bytes)
-        return result
+        return pickle.loads(result)
+
+    @cached_property
+    def full_output(self) -> Any:
+        output = self.raw_output
+        return CustomJsonEncoder(ensure_ascii=False).default(output)
+
+def job(
+    job_type: str | None = None,
+    supports_background: bool = True,
+    supports_batches: bool = True,
+    requirements: Dict[str, Any] | None = None,
+    ray_kwargs: Dict[str, Any] | None = None,
+    setup_func: _JobSetupT | None = None):
+
+    @wrapt.decorator
+    def wrapper(wrapped, instance, args, kwargs) -> Job:
+
+        remote_kwargs = (requirements or {}) | (ray_kwargs or {})
+        if not 'scheduling_strategy' in remote_kwargs:
+            remote_kwargs['scheduling_strategy'] = 'SPREAD'
+
+        @ray.remote(**remote_kwargs)
+        def run_remote(job: Job, options: Options, **kwargs) -> None | ray.ObjectRef  | List[ray.ObjectRef]:
+            return wrapped(job, options, **kwargs)
+
+        def run_job(job: Job, kwargs: Dict[str, Any], options: Options):
+            if setup_func:
+                _logger.debug(f'Calling setup() with {kwargs}')
+                setup_kwargs = setup_func(job, options, **kwargs)
+                kwargs = (kwargs or {}) | (setup_kwargs or {})
+
+            has_batches = kwargs.pop('has_batches', False)
+            if not supports_batches or not has_batches:
+                _logger.debug(f'Run single batch with {kwargs}')
+                return run_remote.remote(job, options, **kwargs)
+
+            if not 'data' in kwargs or not isinstance(kwargs['data'], np.ndarray):
+                _logger.warning('Cannot establish batched execution as setup results are not of numpy array type')
+                return run_remote.remote(job, options, **kwargs)
+            
+            data = kwargs.pop('data')
+            _logger.debug(f'Run {data.shape[0]} batches with {kwargs}')
+            return [run_remote.remote(job, options, **(kwargs | {'data': d})) for d in data]
+
+        job = Job(
+            job_type=job_type or 'test',
+            supports_background=supports_background,
+            requirements=requirements or {},
+            job_kwargs=kwargs)
+        
+        job._func=run_job
+        return job
+    
+    return wrapper

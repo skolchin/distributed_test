@@ -1,9 +1,7 @@
-from uuid import uuid4
 from pydantic import BaseModel, Field, ConfigDict
 from typing import List, Dict, Any, Sequence
 
-from lib.job.job import Job
-from lib.job.job_instance import JobInstance
+from lib.job.job import Job, JobBase, Task
 
 class ClusterStatusResponse(BaseModel):
     """ Cluster status response """
@@ -50,13 +48,33 @@ class JobSubmitRequest(BaseModel):
 
     model_config = ConfigDict(extra='allow')
 
-class JobInstanceResponse(BaseModel):
-    """ List of jobs result response """
-    jobs: Sequence[Job] = Field(default_factory=list)
-    """ List of jobs """
+class JobResponse(JobBase):
+    """ Single job response """
 
-    job_instances: Sequence[JobInstance] = Field(default_factory=list)
-    """ List of job instances """
+    tasks: list['Task'] = Field(default_factory=list)
+    """ List of job tasks """
+
+    @classmethod
+    def from_job(cls, job: Job, add_tasks: bool = True) -> 'JobResponse':
+        o = cls.model_validate(job.model_dump())
+        if add_tasks:
+            o.tasks = [t for t in job.tasks]
+        return o
+
+class JobListResponse(BaseModel):
+    """ Job list response """
+    jobs: Sequence[JobResponse] = Field(default_factory=list)
+    """ List of job """
+
+    @classmethod
+    def from_jobs(cls, jobs: Sequence[Job]) -> 'JobListResponse':
+        my_jobs = []
+        for j in jobs:
+            o = JobResponse.model_validate(j.model_dump())
+            o.tasks = [t for t in j.tasks]
+            my_jobs.append(o)
+            
+        return cls(jobs=my_jobs)
 
 class JobResultResponse(BaseModel):
     """ Single job result response """
