@@ -1,6 +1,6 @@
 import ray
+import json
 import logging
-import asyncio
 from numpy.typing import NDArray
 from ray.exceptions import RayTaskError
 from datetime import datetime
@@ -16,10 +16,11 @@ from fastapi import (
     HTTPException,
     BackgroundTasks,
 )
-from lib.job.job import Job, Task, CannotSerializeResult
-from lib.state import lifespan, BackendState
+
 from lib.responses import *
-from typing import cast
+from lib.state import lifespan, BackendState
+from lib.json_utils import CustomJsonEncoder
+from lib.job.job import Job, Task, CannotSerializeResult
 
 logging.basicConfig(
     format='[%(levelname).1s %(asctime)s %(name)s] %(message)s',
@@ -140,52 +141,57 @@ async def get_job_info(
 
 @app.get('/job/result', tags=['compute'], operation_id='get_job_result')
 async def get_job_result(
-    job_id: str,
-    chunked: bool = True,
-    chunk_no: int = -1,
+    task_id: str,
     state: BackendState = Depends(get_state_from_request)
 ) -> Response:
     """ Retrieve job results """
     with Session(state.engine) as session:
         try:
-            job = session.exec(select(Job).where(Job.job_id == job_id)).one()
+            task = session.exec(select(Task).where(Task.task_id == task_id)).one()
         except:
-            raise HTTPException(status.HTTP_404_NOT_FOUND, f'Job {job_id} not found')
+            raise HTTPException(status.HTTP_404_NOT_FOUND, f'Task {task_id} not found')
 
-        import io
-        stream = io.BytesIO()
-        for j in job.tasks:
-            stream.write(j.full_output or bytes())
-        stream.seek(0)
-        buf = stream.getvalue()
-
-        if not chunked:
-            return Response(
-                content=buf,
-                status_code=status.HTTP_206_PARTIAL_CONTENT,
-                media_type='application/octet-stream',
-            )
-
-        page_size = state.options.max_inline_result_size
-        max_chunk = int(len(buf) / page_size + 1)
-        if chunk_no < 0:
-            return Response(
-                content='{ "max_chunk": ' + str(max_chunk) + ', "page_size": ' + str(page_size) + '}',
-                media_type='application/json'
-            )
-        if chunk_no >= max_chunk:
-            return Response(
-                content='No more data',
-                status_code=status.HTTP_404_NOT_FOUND,
-                media_type='text/plain',
-            )
-
-        pos = chunk_no * page_size
+        if (output := task.get_raw_output(state.options)) is None:
+            raise HTTPException(status.HTTP_410_GONE, f'Task {task_id} results are expired')
+        
         return Response(
-            content=buf[pos:pos+page_size],
-            status_code=status.HTTP_206_PARTIAL_CONTENT,
-            media_type='application/octet-stream',
-        )
+            content=json.dumps(output, ensure_ascii=False, cls=CustomJsonEncoder),
+            media_type='application/json')
+
+        # import io
+        # stream = io.BytesIO()
+        # for j in job.tasks:
+        #     stream.write(j.full_output or bytes())
+        # stream.seek(0)
+        # buf = stream.getvalue()
+
+        # if not chunked:
+        #     return Response(
+        #         content=buf,
+        #         status_code=status.HTTP_206_PARTIAL_CONTENT,
+        #         media_type='application/octet-stream',
+        #     )
+
+        # page_size = state.options.max_inline_result_size
+        # max_chunk = int(len(buf) / page_size + 1)
+        # if chunk_no < 0:
+        #     return Response(
+        #         content='{ "max_chunk": ' + str(max_chunk) + ', "page_size": ' + str(page_size) + '}',
+        #         media_type='application/json'
+        #     )
+        # if chunk_no >= max_chunk:
+        #     return Response(
+        #         content='No more data',
+        #         status_code=status.HTTP_404_NOT_FOUND,
+        #         media_type='text/plain',
+        #     )
+
+        # pos = chunk_no * page_size
+        # return Response(
+        #     content=buf[pos:pos+page_size],
+        #     status_code=status.HTTP_206_PARTIAL_CONTENT,
+        #     media_type='application/octet-stream',
+        # )
 
 @app.post('/job', tags=['compute'], operation_id='submit_job')
 async def submit_job(

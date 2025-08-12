@@ -45,6 +45,8 @@ def is_serializable(x: Any, with_custom_serializers: bool = True) -> bool:
 class CustomJsonEncoder(json.JSONEncoder):
     """ JSON encoder for numpy and datetime types"""
     def default(self, o):
+        if o is None:
+            return None
         if isinstance(o, np.integer):
             return int(o)
         elif isinstance(o, np.floating):

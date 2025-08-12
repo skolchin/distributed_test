@@ -513,27 +513,28 @@
         }
         
         // Helper function to download job result
-        async function downloadJobResult(jobId, taskId = null) {
+        async function downloadTaskResult(task_id) {
             try {
-                let url = `${API_BASE_URL}job/result?job_id=${jobId}&chunked=false`;
+                let url = `${API_BASE_URL}job/result?task_id=${task_id}`;
                 
                 const response = await fetch(url);
                 if (!response.ok) {
-                    throw new Error('Failed to download result');
+                    error = await response.json()
+                    throw new Error(error?.detail || 'Failed to download result');
                 }
                 
                 const blob = await response.blob();
                 const downloadUrl = window.URL.createObjectURL(blob);
                 const a = document.createElement('a');
                 a.href = downloadUrl;
-                a.download = `job_${jobId}${taskId ? `_task_${taskId}` : ''}_result.bin`;
+                a.download = `data_${task_id}.json`;
                 document.body.appendChild(a);
                 a.click();
                 document.body.removeChild(a);
                 window.URL.revokeObjectURL(downloadUrl);
             } catch (error) {
                 console.error('Error downloading job result:', error);
-                alert('Error downloading job result: ' + error.message);
+                alert(error.message);
             }
         }
         
@@ -593,18 +594,8 @@
                 
                 if (data.jobs && data.jobs.length > 0) {
                     // Group tasks by job_id
-                    const tasksByJob = {};
-                    if (data.job_instances) {
-                        data.job_instances.forEach(task => {
-                            if (!tasksByJob[task.job_id]) {
-                                tasksByJob[task.job_id] = [];
-                            }
-                            tasksByJob[task.job_id].push(task);
-                        });
-                    }
-                    
                     data.jobs.forEach(job => {
-                        const tasks = tasksByJob[job.job_id] || [];
+                        const tasks = job.tasks || [];
                         const status = getOverallJobStatus(tasks);
                         if (status === 'running') runningCount++;
                         else if (status === 'completed') completedCount++;
@@ -621,18 +612,8 @@
                 
                 if (data.jobs && data.jobs.length > 0) {
                     // Group tasks by job_id
-                    const tasksByJob = {};
-                    if (data.job_instances) {
-                        data.job_instances.forEach(task => {
-                            if (!tasksByJob[task.job_id]) {
-                                tasksByJob[task.job_id] = [];
-                            }
-                            tasksByJob[task.job_id].push(task);
-                        });
-                    }
-                    
                     data.jobs.forEach(job => {
-                        const tasks = tasksByJob[job.job_id] || [];
+                        const tasks = job.tasks || [];
                         const status = getOverallJobStatus(tasks);
                         const statusClass = `status-${status}`;
                         const statusText = status.charAt(0).toUpperCase() + status.slice(1);
@@ -662,7 +643,7 @@
                     document.querySelectorAll('.btn-view-job').forEach(btn => {
                         btn.addEventListener('click', (e) => {
                             currentJobId = e.target.dataset.jobId;
-                            showJobDetails(currentJobId, data.jobs, data.job_instances);
+                            showJobDetails(currentJobId, data.jobs);
                         });
                     });
                     
@@ -748,7 +729,7 @@
                 return data;
             } catch (error) {
                 console.error('Error submitting job:', error);
-                alert('Error submitting job. See console for details.');
+                alert(error.message);
                 return null;
             }
         }
@@ -779,12 +760,12 @@
         }
         
         // Show job details with tasks
-        async function showJobDetails(jobId, jobsData, jobInstancesData) {
+        async function showJobDetails(jobId, jobsData) {
             // Find the job summary
             const job = jobsData?.find(j => j.job_id === jobId);
             
             // Find all tasks for this job
-            const tasks = jobInstancesData?.filter(task => task.job_id === jobId) || [];
+            const tasks = job.tasks || [];
             
             if (job) {
                 const status = getOverallJobStatus(tasks);
@@ -805,7 +786,7 @@
 
                 // Show tasks table
                 if (tasks.length > 0) {
-                    detailsHtml += '<h5>Args</h5><pre>' + JSON.stringify(tasks[0].job_kwargs, null, 2) + '</pre>';
+                    detailsHtml += '<h5>Args</h5><pre>' + JSON.stringify(job.job_kwargs, null, 2) + '</pre>';
                 }
 
                 // Show tasks table
@@ -833,7 +814,7 @@
                         
                         detailsHtml += `
                             <tr>
-                                <td>${task.instance_id || 'N/A'}</td>
+                                <td>${task.task_id || 'N/A'}</td>
                                 <td><span class="task-status ${taskStatusClass}">${taskStatusText}</span></td>
                                 <td>${formatDate(task.started)}</td>
                                 <td>${formatDate(task.finished)}</td>
@@ -842,11 +823,7 @@
                         `;
                         
                         if (task.finished) {
-                            if (!task.is_inline_output) {
-                                detailsHtml += `<span class="output-link" data-job-id="${job.job_id}" data-task-id="${task.instance_id}">Download</span>`;
-                            } else {
-                                detailsHtml += 'Inline';
-                            }
+                            detailsHtml += `<span class="output-link" data-task_id="${task.task_id}">Download</span>`;
                         } else {
                             detailsHtml += 'None';
                         }
@@ -865,9 +842,8 @@
                 // Add click handlers for download links
                 jobDetailsContent.querySelectorAll('.output-link').forEach(link => {
                     link.addEventListener('click', (e) => {
-                        const jobId = e.target.dataset.jobId;
-                        const taskId = e.target.dataset.taskId;
-                        downloadJobResult(jobId, taskId);
+                        const task_id = e.target.dataset.task_id;
+                        downloadTaskResult(task_id);
                     });
                 });
                 

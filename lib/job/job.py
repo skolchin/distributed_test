@@ -285,7 +285,6 @@ class Task(TaskBase, table=True):
             rt['task_id'] = None
             rt['resources'] = {}
 
-        _logger.debug(f'Runtime info: {rt}')
         return JobRuntimeInfo(**rt)
 
     @classmethod
@@ -295,9 +294,10 @@ class Task(TaskBase, table=True):
                     output: Any,
                     is_background: bool = False,
                     output_ref: str | None = None) -> 'Task':
+        
         rt = cls.job_runtime_info()
-
         data, inline, ttl, ref_id = cls._serialize_output(parent, options, rt, output_ref, output)
+
         return cls(
             job_id=parent.job_id,
             job=parent,
@@ -357,29 +357,24 @@ class Task(TaskBase, table=True):
         )
         return None, False, ttl, ref_id
 
-    @cached_property
-    def raw_output(self) -> Any:
+    def get_raw_output(self, options: Options) -> Any:
         if self.is_inline_output:
             return self.inline_output
-        
-        if not (uri := self.runtime_info.get('result_storage_uri') if self.runtime_info else None):
+
+        assert self.output_ref        
+        if not (uri := options.result_storage_uri):
             _logger.error('Cannot retrieve storage results as `result_storage_uri` is not set')
             return None
 
         _logger.info(f'Connecting to result backend at {uri}')
         redis_cli = redis.Redis.from_url(uri)
 
-        result = redis_cli.get(name=(self.runtime_info or {}).get('task_id') or self.job.job_id)
+        result = redis_cli.get(name=self.output_ref)
         if result is None:
             return None
         
         assert isinstance(result, bytes)
         return pickle.loads(result)
-
-    @cached_property
-    def full_output(self) -> Any:
-        output = self.raw_output
-        return CustomJsonEncoder(ensure_ascii=False).default(output)
 
 def job(
     job_type: str | None = None,

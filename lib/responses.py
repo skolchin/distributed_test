@@ -78,14 +78,3 @@ class JobListResponse(BaseModel):
             my_jobs.append(o)
             
         return cls(jobs=my_jobs)
-
-class JobResultResponse(BaseModel):
-    """ Single job result response """
-    job: Job
-    """ Job info """
-
-    output: bytes
-    """ job result """
-
-    max_chunk: int = 0
-    """ number of chunks """
