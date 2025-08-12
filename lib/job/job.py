@@ -25,7 +25,7 @@ _logger = logging.getLogger(__name__)
 _JobSetupT = Callable[..., Dict[str, Any] | None]
 """ Job setup function """
 
-_JobFuncT = Callable[..., ray.ObjectRef | List[ray.ObjectRef] | None]
+_JobFuncT = Callable[..., Any]
 """ Job execution function """
 
 class CannotSerializeResult(Exception):
@@ -96,15 +96,19 @@ class Job(JobBase, table=True):
         assert self._func
         if job_kwargs:
             self.job_kwargs = job_kwargs.copy()
-        futures = self._func(self, job_kwargs, options)
-        if futures is None:
-            return []
 
-        result = ray.get(futures)
+        result = self._func(self, job_kwargs, options)
+        match result:
+            case ray.ObjectRef():
+                result = ray.get(result)
+
+            case list() | tuple() if len(result) and isinstance(result[0], ray.ObjectRef):
+                result = ray.get(cast(List[ray.ObjectRef], result))
+
         match result:
             case Task():
                 return [result._update(is_background=is_background)]
-            
+
             case list() | tuple() if len(result) and isinstance(result[0], Task):
                 return list([cast(Task, r)._update(is_background=is_background) for r in result])
             
@@ -193,7 +197,7 @@ class TaskBase(SQLModel):
     inline_output: Any | None = Field(default=None, repr=False, sa_type=JSON)
     """ Size-limited inline output (None if results were stored on results storage) """
 
-    result_ref: str | None = Field(default=None)
+    output_ref: str | None = Field(default=None)
     """ Result reference ID (None if results are inline) """
 
 class Task(TaskBase, table=True):
@@ -219,6 +223,7 @@ class Task(TaskBase, table=True):
         rt['worker_id'] = ctx.get_worker_id()
         rt['node_ip_address'] = get_node_ip_address()
 
+        _logger.debug(f'Worker is in {ctx.worker.mode} mode')
         if ctx.worker.mode == WORKER_MODE:
             rt['task_id'] = ctx.get_task_id()
             rt['resources'] = ctx.get_assigned_resources()
@@ -226,6 +231,7 @@ class Task(TaskBase, table=True):
             rt['task_id'] = None
             rt['resources'] = {}
 
+        _logger.debug(f'Runtime info: {rt}')
         return JobRuntimeInfo(**rt)
 
     @classmethod
@@ -244,7 +250,7 @@ class Task(TaskBase, table=True):
             is_background=is_background,
             output_ttl=ttl,
             inline_output=data,
-            result_ref=ref_id,
+            output_ref=ref_id,
         )
 
     def _update(self, is_background: bool) -> 'Task':
@@ -344,15 +350,15 @@ def job(
 
             has_batches = kwargs.pop('has_batches', False)
             if not supports_batches or not has_batches:
-                _logger.debug(f'Run single batch with {kwargs}')
+                _logger.debug(f'Starting single batch with {kwargs}')
                 return run_remote.remote(job, options, **kwargs)
 
-            if not 'data' in kwargs or not isinstance(kwargs['data'], np.ndarray):
-                _logger.warning('Cannot establish batched execution as setup results are not of numpy array type')
+            if not 'data' in kwargs or not isinstance(kwargs['data'], (list, tuple, np.ndarray)):
+                _logger.warning('Cannot establish batched execution as setup results are not list-like')
                 return run_remote.remote(job, options, **kwargs)
             
             data = kwargs.pop('data')
-            _logger.debug(f'Run {data.shape[0]} batches with {kwargs}')
+            _logger.debug(f'Staring {data.shape[0]} batches with {kwargs}')
             return [run_remote.remote(job, options, **(kwargs | {'data': d})) for d in data]
 
         job = Job(

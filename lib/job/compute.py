@@ -34,11 +34,11 @@ def compute_setup(
 ) # type:ignore
 def cpu_compute(job: Job, options: Options, data: np.ndarray, **kwargs) -> Task:
     x = np.random.rand()
+    y = data * x
     return Task.from_output(
         parent=job,
         options=options,
-        output=data * x)
-
+        output=y)
 
 @job(
     job_type='gpu-compute', 
