@@ -20,7 +20,7 @@ from fastapi import (
 from lib.responses import *
 from lib.state import lifespan, BackendState
 from lib.json_utils import CustomJsonEncoder
-from lib.job.job import Job, Task, CannotSerializeResult
+from lib.job import Job, Task, CannotSerializeResult
 
 logging.basicConfig(
     format='[%(levelname).1s %(asctime)s %(name)s] %(message)s',
@@ -205,7 +205,7 @@ async def submit_job(
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail=f'Unknown job type {request.job_type}')
 
     job_info = state.job_types[request.job_type]
-    logger.info(f'Launching job type {request.job_type}')
+    logger.info(f'Launching job of {request.job_type} type')
 
     job_kwargs = {k: v for k,v in (request.__pydantic_extra__ or {}).items()}
     logger.info(f'Job kwargs: {job_kwargs}')

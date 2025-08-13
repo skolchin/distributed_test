@@ -17,5 +17,8 @@ class Options(BaseSettings):
     default_result_ttl: int = 300
     """ Default TTL for result to be kept """
 
+    default_timeout: int = 600
+    """ Default ray request timeout """
+
     result_storage_uri: str | None = None
     """ URI of result Redis storage or None """

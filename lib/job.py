@@ -13,12 +13,12 @@ from datetime import datetime
 from types import GeneratorType, AsyncGeneratorType
 from functools import cached_property
 from ray.util import get_node_ip_address
+from ray.exceptions import GetTimeoutError
 from ray._private.worker import WORKER_MODE
 from sqlmodel import SQLModel, Field, Relationship
 from typing import Any, Dict, List, TypedDict, Type, ClassVar, AsyncGenerator, Tuple, cast, Callable
 
 from lib.options import Options
-from lib.job.types import JobRuntimeInfo
 from lib.json_utils import get_size, is_serializable, CustomJsonEncoder, PYDANTIC_ENCODERS
 
 _logger = logging.getLogger(__name__)
@@ -37,6 +37,15 @@ class InvalidResultType(Exception):
     """ Invalid result type error """
     pass
 
+class JobRuntimeInfo(TypedDict):
+    """ Job runtime information """
+    ray_job_id: str
+    node_id: str
+    # node_name: str
+    node_ip_address: str
+    worker_id: str | None
+    task_id: str | None
+    resources: Dict[str, Any] | None
 
 class JobType(TypedDict):
     """ Structured job type info """
@@ -97,11 +106,44 @@ class Job(JobBase, table=True):
             case Task():
                 return [result._update(is_background=is_background)]
 
-            case list() | tuple() if len(result) and isinstance(result[0], Task):
-                return list([cast(Task, r)._update(is_background=is_background) for r in result])
+            case Exception():
+                return [Task.from_exception(self, options, is_background=is_background, ex=result)]
             
+            case list() | tuple():
+                results = []
+                for t in result:
+                    match t:
+                        case Task():
+                            results.append(t._update(is_background=is_background))
+                        case Exception():
+                            results.append(Task.from_exception(self, options, is_background=is_background, ex=t))
+
+                return results if results else [Task.from_output(self, options, is_background=is_background, output=result)]
+
             case _:
                 return [Task.from_output(self, options, is_background=is_background, output=result)]
+
+    def _get_future(self, future, timeout):
+        try:
+            return ray.get(future, timeout=timeout)
+        except Exception as e:
+            _logger.error(e)
+            return e
+
+    def _get_futures(self, futures, timeout):
+        # see: https://discuss.ray.io/t/handling-exceptions-from-list-of-tasks-using-ray-get/2538/5
+        results = []
+        ready, unready = ray.wait([f for f in futures], num_returns=1, timeout=timeout) 
+        while unready:
+            try:
+                results.append(ray.get(ready))
+            except Exception as e:
+                _logger.error(e)
+                results.append(e)
+
+            ready, unready = ray.wait(unready, num_returns=1, timeout=timeout)
+
+        return results
 
     def run(self, 
             options: Options,
@@ -117,14 +159,14 @@ class Job(JobBase, table=True):
         result = self._func(self, job_kwargs, options)
         match result:
             case ray.ObjectRef():
-                return self._result_to_tasks(options, is_background, ray.get(result))
+                return self._result_to_tasks(options, is_background, self._get_future(result, options.default_timeout))
 
             case list() | tuple() if len(result) and isinstance(result[0], ray.ObjectRef):
-                return self._result_to_tasks(options, is_background, ray.get(cast(List[ray.ObjectRef], result)))
+                return self._result_to_tasks(options, is_background, self._get_futures(result, options.default_timeout))
 
             case ray.ObjectRefGenerator():
                 _logger.warning(f'Job {self.job_id}: job function returns generator object while running in sync mode. Use streaming mode for better performance')
-                return self._result_to_tasks(options, is_background, [ray.get(ref) for ref in result])
+                return self._result_to_tasks(options, is_background, [self._get_future(ref, options.default_timeout) for ref in result])
 
             case GeneratorType():
                 _logger.warning(f'Job {self.job_id}: job function returns generator object while running in sync mode. Use streaming mode for better performance')
@@ -182,8 +224,8 @@ class Job(JobBase, table=True):
     @classmethod
     def job_types(cls) -> List[JobType]:
         result = []
-        pkg_name = '.'.join(__name__.split('.')[:-1])
-        for fn in Path(__file__).parent.glob('*.py'):
+        pkg_name = '.'.join(__name__.split('.')[:-1]) + '.jobs'
+        for fn in Path(__file__).parent.joinpath('jobs').glob('*.py'):
             try:
                 mod_name = fn.with_suffix('').name
                 if mod_name in globals():
@@ -309,6 +351,25 @@ class Task(TaskBase, table=True):
             output_ref=ref_id,
         )
 
+    @classmethod
+    def from_exception(cls,
+                    parent: Job,
+                    options: Options,
+                    ex: Exception,
+                    is_background: bool = False) -> 'Task':
+        
+        rt = cls.job_runtime_info()
+        return cls(
+            job_id=parent.job_id,
+            job=parent,
+            runtime_info=rt,
+            is_background=is_background,
+            is_inline_output=False,
+            inline_output=None,
+            output_ref=None,
+            error_info={'code': 500, 'error': str(ex)},
+        )
+
     def _update(self, is_background: bool) -> 'Task':
         self.is_background = is_background
         return self
@@ -376,11 +437,10 @@ class Task(TaskBase, table=True):
         assert isinstance(result, bytes)
         return pickle.loads(result)
 
-def job(
+def remote_job(
     job_type: str | None = None,
     supports_background: bool = True,
     supports_batches: bool = True,
-    supports_remote_run: bool = True,
     requirements: Dict[str, Any] | None = None,
     ray_kwargs: Dict[str, Any] | None = None,
     setup_func: _JobSetupT | None = None):
@@ -402,26 +462,51 @@ def job(
                 setup_kwargs = setup_func(job, options, **kwargs)
                 kwargs = (kwargs or {}) | (setup_kwargs or {})
 
-            if supports_remote_run:
-                _logger.debug(f'Job {job.job_id}: job function has to run remotelly')
-                has_batches = kwargs.pop('has_batches', False)
-                if not supports_batches or not has_batches:
-                    _logger.debug(f'Starting single batch with {kwargs}')
-                    return run_remote.remote(job, options, **kwargs)
+            _logger.debug(f'Job {job.job_id}: remote execution')
+            has_batches = kwargs.pop('has_batches', False)
+            if not supports_batches or not has_batches:
+                _logger.debug(f'Starting single batch with {kwargs}')
+                return run_remote.remote(job, options, **kwargs)
 
-                if not 'data' in kwargs or not isinstance(kwargs['data'], (list, tuple, np.ndarray)):
-                    _logger.warning(f'Job {job.job_id}: cannot establish batched execution as setup results are not list-like')
-                    return run_remote.remote(job, options, **kwargs)
+            if not 'data' in kwargs or not isinstance(kwargs['data'], (list, tuple, np.ndarray)):
+                _logger.warning(f'Job {job.job_id}: cannot establish batched execution as data provided is not list-like')
+                return run_remote.remote(job, options, **kwargs)
                 
-                data = kwargs.pop('data')
-                _logger.debug(f'Job {job.job_id}: staring {data.shape[0]} batches with {kwargs}')
-                return [run_remote.remote(job, options, **(kwargs | {'data': d})) for d in data]
+            data = kwargs.pop('data')
+            _logger.debug(f'Job {job.job_id}: staring {data.shape[0]} batches with {kwargs}')
+            return [run_remote.remote(job, options, **(kwargs | {'data': d})) for d in data]
 
-            _logger.debug(f'Job {job.job_id}: local execution preferred')
+        job = Job(
+            job_type=job_type or 'remote',
+            supports_background=supports_background,
+            requirements=requirements or {},
+            job_kwargs=kwargs)
+        
+        job._func=run_job
+        return job
+    
+    return wrapper
+
+def local_job(
+    job_type: str | None = None,
+    supports_background: bool = True,
+    requirements: Dict[str, Any] | None = None,
+    setup_func: _JobSetupT | None = None):
+
+    @wrapt.decorator
+    def wrapper(wrapped, instance, args, kwargs) -> Job:
+
+        def run_job(job: Job, kwargs: Dict[str, Any], options: Options):
+            if setup_func:
+                _logger.debug(f'Job {job.job_id}: calling setup() with {kwargs}')
+                setup_kwargs = setup_func(job, options, **kwargs)
+                kwargs = (kwargs or {}) | (setup_kwargs or {})
+
+            _logger.debug(f'Job {job.job_id}: local execution')
             return wrapped(job, options, **kwargs)
         
         job = Job(
-            job_type=job_type or 'test',
+            job_type=job_type or 'local',
             supports_background=supports_background,
             requirements=requirements or {},
             job_kwargs=kwargs)

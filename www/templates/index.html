@@ -468,22 +468,26 @@
             return date.toLocaleString();
         }
         
-        // Helper function to determine job status
-        function getJobStatus(job) {
-            if (job.finished) {
+        // Helper function to determine task status
+        function getTaskStatus(task) {
+            if (task.error_info.code > 0) {
+                return 'failed';
+            }
+            if (task.finished) {
                 return 'completed';
             }
-            return job.started ? 'running' : 'pending';
+            return task.started ? 'running' : 'pending';
         }
         
         // Helper function to get overall job status from tasks
         function getOverallJobStatus(tasks) {
             if (!tasks || tasks.length === 0) return 'pending';
             
-            const statuses = tasks.map(task => getJobStatus(task));
+            const statuses = tasks.map(task => getTaskStatus(task));
             
             if (statuses.includes('failed')) return 'failed';
             if (statuses.includes('running')) return 'running';
+            if (statuses.includes('failed')) return 'failed';
             if (statuses.every(status => status === 'completed')) return 'completed';
             return 'pending';
         }
@@ -500,7 +504,7 @@
             if (!tasks) return counts;
             
             tasks.forEach(task => {
-                counts[getJobStatus(task)]++;
+                counts[getTaskStatus(task)]++;
             });
             
             return counts;
@@ -808,7 +812,7 @@
                     `;
                     
                     tasks.forEach(task => {
-                        const taskStatus = getJobStatus(task);
+                        const taskStatus = getTaskStatus(task);
                         const taskStatusClass = `status-${taskStatus}`;
                         const taskStatusText = taskStatus.charAt(0).toUpperCase() + taskStatus.slice(1);
                         
@@ -822,7 +826,7 @@
                                 <td>
                         `;
                         
-                        if (task.finished) {
+                        if (task.finished && (task.is_inline_output || task.output_ref)) {
                             detailsHtml += `<span class="output-link" data-task_id="${task.task_id}">Download</span>`;
                         } else {
                             detailsHtml += 'None';

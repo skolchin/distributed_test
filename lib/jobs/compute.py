@@ -1,7 +1,7 @@
 import logging
 import numpy as np
 from lib.options import Options
-from lib.job.job import job, Job, Task
+from lib.job import remote_job, Job, Task
 
 from typing import Tuple, Dict, Any
 
@@ -15,7 +15,7 @@ def compute_setup(
         **kwargs) -> Dict[str, Any]:
     
     if kwargs:
-        _logger.warning(f'Extra arguments for compute() will be ignored {kwargs}')
+        _logger.warning(f'Extra arguments will be ignored: {kwargs}')
 
     data = np.random.uniform(0, 1, shape) if num_batches <= 1 \
         else np.array([np.random.uniform(0, 1, shape) for _ in range(num_batches)])
@@ -25,7 +25,7 @@ def compute_setup(
         'has_batches': num_batches > 1,
     }
 
-@job(
+@remote_job(
     job_type='compute', 
     supports_background=True,
     supports_batches=True,
@@ -35,12 +35,14 @@ def compute_setup(
 def cpu_compute(job: Job, options: Options, data: np.ndarray, **kwargs) -> Task:
     x = np.random.rand()
     y = data * x
+    raise ValueError('qq')
+
     return Task.from_output(
         parent=job,
         options=options,
         output=y)
 
-@job(
+@remote_job(
     job_type='gpu-compute', 
     supports_background=True,
     supports_batches=True,

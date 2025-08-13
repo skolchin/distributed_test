@@ -1,7 +1,8 @@
+from datetime import datetime
 from pydantic import BaseModel, Field, ConfigDict
 from typing import List, Dict, Any, Sequence
 
-from lib.job.job import Job, JobBase, Task
+from lib.job import Job, JobBase, Task
 
 class ClusterStatusResponse(BaseModel):
     """ Cluster status response """
@@ -51,18 +52,29 @@ class JobSubmitRequest(BaseModel):
 
     model_config = ConfigDict(extra='allow')
 
+def _safe_min(it):
+    return min(it) if it else None
+
+def _safe_max(it):
+    return max(it) if it else None
+
 class JobResponse(JobBase):
     """ Single job response """
+
+    started: datetime | None = Field(None)
+    finished: datetime | None = Field(None)
 
     tasks: list['Task'] = Field(default_factory=list)
     """ List of job tasks """
 
     @classmethod
     def from_job(cls, job: Job, add_tasks: bool = True) -> 'JobResponse':
-        o = cls.model_validate(job.model_dump())
+        resp = cls.model_validate(job.model_dump())
         if add_tasks:
-            o.tasks = [t for t in job.tasks]
-        return o
+            resp.tasks = [t for t in job.tasks]
+            resp.started = _safe_min([t.started for t in resp.tasks if t.started])
+            resp.finished = _safe_max([t.finished for t in resp.tasks if t.finished])
+        return resp
 
 class JobListResponse(BaseModel):
     """ Job list response """
@@ -71,10 +83,5 @@ class JobListResponse(BaseModel):
 
     @classmethod
     def from_jobs(cls, jobs: Sequence[Job]) -> 'JobListResponse':
-        my_jobs = []
-        for j in jobs:
-            o = JobResponse.model_validate(j.model_dump())
-            o.tasks = [t for t in j.tasks]
-            my_jobs.append(o)
-            
-        return cls(jobs=my_jobs)
+        resps = [JobResponse.from_job(j) for j in jobs]
+        return cls(jobs=resps)

@@ -9,7 +9,7 @@ from pydantic import BaseModel, Field, ConfigDict
 
 from lib.options import Options
 from lib.conn import RayConnection
-from lib.job.job import Job, JobType
+from lib.job import Job, JobType
 from lib.json_utils import sqla_json_serializer, sqla_json_deserializer
 
 from typing import AsyncIterator, Dict

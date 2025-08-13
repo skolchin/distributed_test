@@ -1,7 +1,7 @@
 import ray
 import logging
 import numpy as np
-from lib.job.job import Job, Task, job
+from lib.job import Job, Task, local_job
 from typing import Tuple, Dict, Any
 
 from lib.options import Options
@@ -16,13 +16,14 @@ def dataset_setup(
         **kwargs) -> Dict[str, Any]:
     
     if kwargs:
-        _logger.warning(f'Extra arguments for compute() will be ignored {kwargs}')
+        _logger.warning(f'Extra arguments will be ignored: {kwargs}')
 
     data = np.random.uniform(0, 1, shape) if num_batches <= 1 \
         else np.array([np.random.uniform(0, 1, shape) for _ in range(num_batches)])
     
     return {
         'data': ray.data.from_numpy(data),
+        'num_cpus': 1,
     }
 
 def _compute(batch: Dict[str, np.ndarray]) -> Dict[str, np.ndarray]:
@@ -31,12 +32,8 @@ def _compute(batch: Dict[str, np.ndarray]) -> Dict[str, np.ndarray]:
     result = data * x
     return { 'data': result }
 
-@job(
+@local_job(
     job_type='dataset', 
-    supports_background=True,
-    supports_batches=False,
-    supports_remote_run=False,
-    requirements={ 'num_cpus': 1 },
     setup_func=dataset_setup,
 ) # type:ignore
 def dataset_compute(job: Job, 
