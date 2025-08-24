@@ -19,7 +19,7 @@ from sqlmodel import SQLModel, Field, Relationship
 from typing import Any, Dict, List, TypedDict, Type, ClassVar, AsyncGenerator, Tuple, cast, Callable
 
 from lib.options import Options
-from lib.json_utils import get_size, is_serializable, CustomJsonEncoder, PYDANTIC_ENCODERS
+from lib.json_utils import get_size, is_serializable, PYDANTIC_ENCODERS, cast_to_signature
 
 _logger = logging.getLogger(__name__)
 
@@ -132,18 +132,18 @@ class Job(JobBase, table=True):
 
     def _get_futures(self, futures, timeout):
         # see: https://discuss.ray.io/t/handling-exceptions-from-list-of-tasks-using-ray-get/2538/5
-        results = []
-        ready, unready = ray.wait([f for f in futures], num_returns=1, timeout=timeout) 
-        while unready:
-            try:
-                results.append(ray.get(ready))
-            except Exception as e:
-                _logger.error(e)
-                results.append(e)
+        # results = []
+        # ready, unready = ray.wait([f for f in futures], num_returns=1, timeout=timeout) 
+        # while unready:
+        #     try:
+        #         results.extend(ray.get(ready))
+        #     except Exception as e:
+        #         _logger.error(e)
+        #         results.append(e)
 
-            ready, unready = ray.wait(unready, num_returns=1, timeout=timeout)
+        #     ready, unready = ray.wait(unready, num_returns=1, timeout=timeout)
 
-        return results
+        return ray.get(futures)
 
     def run(self, 
             options: Options,
@@ -458,23 +458,28 @@ def remote_job(
 
         def run_job(job: Job, kwargs: Dict[str, Any], options: Options):
             if setup_func:
-                _logger.debug(f'Job {job.job_id}: calling setup() with {kwargs}')
-                setup_kwargs = setup_func(job, options, **kwargs)
+                kwargs_cast = cast_to_signature(kwargs, setup_func)
+                _logger.debug(f'Job {job.job_id}: calling setup() with {kwargs_cast}')
+                setup_kwargs = setup_func(job, options, **kwargs_cast)
                 kwargs = (kwargs or {}) | (setup_kwargs or {})
 
             _logger.debug(f'Job {job.job_id}: remote execution')
             has_batches = kwargs.pop('has_batches', False)
+            kwargs_cast = cast_to_signature(kwargs, wrapped)
             if not supports_batches or not has_batches:
-                _logger.debug(f'Starting single batch with {kwargs}')
-                return run_remote.remote(job, options, **kwargs)
+                _logger.debug(f'Starting single batch with {kwargs_cast}')
+                result = run_remote.remote(job, options, **kwargs_cast)
+                return result
 
-            if not 'data' in kwargs or not isinstance(kwargs['data'], (list, tuple, np.ndarray)):
+            if not 'data' in kwargs_cast or not isinstance(kwargs_cast['data'], (list, tuple, np.ndarray)):
                 _logger.warning(f'Job {job.job_id}: cannot establish batched execution as data provided is not list-like')
-                return run_remote.remote(job, options, **kwargs)
+                result = run_remote.remote(job, options, **kwargs_cast)
+                return result
                 
-            data = kwargs.pop('data')
-            _logger.debug(f'Job {job.job_id}: staring {data.shape[0]} batches with {kwargs}')
-            return [run_remote.remote(job, options, **(kwargs | {'data': d})) for d in data]
+            data = kwargs_cast.pop('data')
+            _logger.debug(f'Job {job.job_id}: staring {data.shape[0]} batches with {kwargs_cast}')
+            result = [run_remote.remote(job, options, **(kwargs_cast | {'data': d})) for d in data]
+            return result
 
         job = Job(
             job_type=job_type or 'remote',
@@ -498,12 +503,14 @@ def local_job(
 
         def run_job(job: Job, kwargs: Dict[str, Any], options: Options):
             if setup_func:
-                _logger.debug(f'Job {job.job_id}: calling setup() with {kwargs}')
-                setup_kwargs = setup_func(job, options, **kwargs)
+                kwargs_cast = cast_to_signature(kwargs, setup_func)
+                _logger.debug(f'Job {job.job_id}: calling setup() with {kwargs_cast}')
+                setup_kwargs = setup_func(job, options, **kwargs_cast)
                 kwargs = (kwargs or {}) | (setup_kwargs or {})
 
+            kwargs_cast = cast_to_signature(kwargs, wrapped)
             _logger.debug(f'Job {job.job_id}: local execution')
-            return wrapped(job, options, **kwargs)
+            return wrapped(job, options, **kwargs_cast)
         
         job = Job(
             job_type=job_type or 'local',
