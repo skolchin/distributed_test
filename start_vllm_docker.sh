@@ -8,25 +8,15 @@
 #
 # Usage:
 # 1. Designate one machine as the head node and execute:
-#    bash run_cluster.sh \
-#         vllm/vllm-openai \
-#         <head_node_ip> \
-#         --head \
-#         /abs/path/to/huggingface/cache \
-#         -e VLLM_HOST_IP=<head_node_ip>
+#    bash run_cluster.sh --head ...
 #
 # 2. On every worker machine, execute:
-#    bash run_cluster.sh \
-#         vllm/vllm-openai \
-#         <head_node_ip> \
-#         --worker \
-#         /abs/path/to/huggingface/cache \
-#         -e VLLM_HOST_IP=<worker_node_ip>
+#    bash run_cluster.sh --worker <head_node_ip> ...
 # 
-# Each worker requires a unique VLLM_HOST_IP value.
+# Any additional arguments might follow the base command.
+#
 # Keep each terminal session open. Closing a session stops the associated Ray
 # node and thereby shuts down the entire cluster.
-# Every machine must be reachable at the supplied IP address.
 #
 # The container is named "node-<random_suffix>". To open a shell inside
 # a container after launch, use:
@@ -39,26 +29,45 @@
 #       docker stop node-<random_suffix>
 
 # Check for minimum number of required arguments.
-if [ $# -lt 4 ]; then
-    echo "Usage: $0 docker_image head_node_ip --head|--worker path_to_hf_home [additional_args...]"
+if [ $# -eq 0    ]; then
+    echo "Usage: $0 --head|--worker [head_node_ip] [additional_args...]"
     exit 1
 fi
 
-# Extract the mandatory positional arguments and remove them from $@.
-DOCKER_IMAGE="$1"
-HEAD_NODE_ADDRESS="$2"
-NODE_TYPE="$3"  # Should be --head or --worker.
-PATH_TO_HF_HOME="$4"
-shift 4
+# Extract the node type
+NODE_TYPE="$1"
+shift 1
 
-# Preserve any extra arguments so they can be forwarded to Docker.
-ADDITIONAL_ARGS=("$@")
-
-# Validate the NODE_TYPE argument.
 if [ "${NODE_TYPE}" != "--head" ] && [ "${NODE_TYPE}" != "--worker" ]; then
     echo "Error: Node type must be --head or --worker"
     exit 1
 fi
+
+if [ "${NODE_TYPE}" == "--head" ]; then
+    HEAD_NODE_ADDRESS=$(hostname -I | cut -d' ' -f1)
+    echo "Cluster IP address will be ${HEAD_NODE_ADDRESS}"
+else
+    HEAD_NODE_ADDRESS="$1"
+    shift 1
+
+    if [[ -z $HEAD_NODE_ADDRESS ]]; then
+        echo "Error: head node address must be specified if node type is --worker"
+        exit 1
+    fi
+fi
+
+# Check for HF cache presence
+PATH_TO_HF_HOME="${HOME}/.cache/huggingface"
+if [[ ! -d "$PATH_TO_HF_HOME" ]]; then
+    # Cache does not exist, switch to local directory
+    LOCAL_HF="./.models"
+    mkdir -p "${LOCAL_HF}"
+    echo "Warning: HuggingFace cache directory ${PATH_TO_HF_HOME} was not found, ${LOCAL_HF} will be used instead"
+    PATH_TO_HF_HOME="${LOCAL_HF}"
+fi
+
+# Preserve any extra arguments for the docker.
+ADDITIONAL_ARGS=("$@")
 
 # Generate a unique container name with random suffix.
 # Docker container names must be unique on each host.
@@ -69,26 +78,26 @@ CONTAINER_NAME="node-${RANDOM}"
 # Define a cleanup routine that removes the container when the script exits.
 # This prevents orphaned containers from accumulating if the script is interrupted.
 cleanup() {
-    docker stop "${CONTAINER_NAME}"
-    docker rm "${CONTAINER_NAME}"
+    docker stop "${CONTAINER_NAME}" >/dev/null 2>&1
+    docker rm "${CONTAINER_NAME}" >/dev/null 2>&1
 }
 trap cleanup EXIT
 
 # Build the Ray start command based on the node role.
 # The head node manages the cluster and accepts connections on port 6379, 
 # while workers connect to the head's address.
-RAY_START_CMD="ray start --block"
+RAY_START_CMD="ray start --block --disable-usage-stats"
 if [ "${NODE_TYPE}" == "--head" ]; then
     RAY_START_CMD+=" --head --port=6379"
 else
     RAY_START_CMD+=" --address=${HEAD_NODE_ADDRESS}:6379"
 fi
+echo "Ray start command: ${RAY_START_CMD}"
 
 # Launch the container with the assembled parameters.
 # --network host: Allows Ray nodes to communicate directly via host networking
 # --shm-size 10.24g: Increases shared memory
 # --gpus all: Gives container access to all GPUs on the host
-# -v HF_HOME: Mounts HuggingFace cache to avoid re-downloading models
 docker run \
     --entrypoint /bin/bash \
     --network host \
@@ -96,5 +105,6 @@ docker run \
     --shm-size 10.24g \
     --gpus all \
     -v "${PATH_TO_HF_HOME}:/root/.cache/huggingface" \
+    -e VLLM_HOST_IP=${HEAD_NODE_ADDRESS} \
     "${ADDITIONAL_ARGS[@]}" \
-    "${DOCKER_IMAGE}" -c "${RAY_START_CMD}"
+    vllm/vllm-openai -c "${RAY_START_CMD}"
