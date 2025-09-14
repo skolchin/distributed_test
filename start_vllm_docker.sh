@@ -76,10 +76,10 @@ fi
 ADDITIONAL_ARGS=(
     "-e" "NCCL_DEBUG=\"TRACE\""
     "-e" "VLLM_LOGGING_LEVEL=\"DEBUG\""
-    "-e" "CUDA_LAUNCH_BLOCKING=\"1\""
-    "-e" "VLLM_TRACE_FUNCTION=\"0\""
-    "-e" "NCCL_P2P_DISABLE=\"1\""
-    "-e" "OMP_NUM_THREADS=\"2\""
+    "-e" "CUDA_LAUNCH_BLOCKING=1"
+    "-e" "VLLM_TRACE_FUNCTION=0"
+    "-e" "NCCL_P2P_DISABLE=1"
+    "-e" "OMP_NUM_THREADS=2"
     "-e" "GLOO_SOCKET_IFNAME=\"${HOST_IFNAME}\""
 )
 ADDITIONAL_ARGS+=("$@")
