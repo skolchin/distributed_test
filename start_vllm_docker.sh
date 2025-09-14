@@ -116,13 +116,13 @@ echo "Launching docker ${CONTAINER_NAME} with arguments: ${ADDITIONAL_ARGS[@]}"
 echo "Ray start command: ${RAY_START_CMD}"
 echo "VLLM IP address: ${VLLM_NODE_ADDRESS}"
 
-# docker run \
-#     --entrypoint /bin/bash \
-#     --network host \
-#     --name "${CONTAINER_NAME}" \
-#     --shm-size 10.24g \
-#     --gpus all \
-#     -v "${PATH_TO_HF_HOME}:/root/.cache/huggingface" \
-#     -e VLLM_HOST_IP=${VLLM_NODE_ADDRESS} \
-#     "${ADDITIONAL_ARGS[@]}" \
-#     vllm/vllm-openai -c "${RAY_START_CMD}"
+docker run \
+    --entrypoint /bin/bash \
+    --network host \
+    --name "${CONTAINER_NAME}" \
+    --shm-size 10.24g \
+    --gpus all \
+    -v "${PATH_TO_HF_HOME}:/root/.cache/huggingface" \
+    -e VLLM_HOST_IP=${VLLM_NODE_ADDRESS} \
+    "${ADDITIONAL_ARGS[@]}" \
+    vllm/vllm-openai -c "${RAY_START_CMD}"
