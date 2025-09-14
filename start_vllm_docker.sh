@@ -66,8 +66,16 @@ if [[ ! -d "$PATH_TO_HF_HOME" ]]; then
     PATH_TO_HF_HOME="${LOCAL_HF}"
 fi
 
-# Keep extra arguments for the docker
-ADDITIONAL_ARGS=("$@")
+# Build docker arguments with some predefines
+ADDITIONAL_ARGS=(
+    "-e NCCL_DEBUG=\"TRACE\""
+    "-e VLLM_LOGGING_LEVEL=\"DEBUG\""
+    "-e CUDA_LAUNCH_BLOCKING=\"1\""
+    "-e VLLM_TRACE_FUNCTION=\"0\""
+    "-e NCCL_P2P_DISABLE=\"1\""
+    "-e OMP_NUM_THREADS=\"2\""
+)
+ADDITIONAL_ARGS+=("$@")
 
 # Generate a unique container name with random suffix for worker nodes
 # For the head node, fixed name is used
@@ -104,23 +112,17 @@ trap cleanup EXIT
 #     VLLM_SERVE_CMD="&& vllm serve Qwen/Qwen3-0.6B --port 8080 --gpu_memory_utilization 0.9 pipeline_parallel_size=1"
 
 # Launch the docker
-echo "Launching docker ${CONTAINER_NAME}, extra arguments: ${ADDITIONAL_ARGS[@]}"
+echo "Launching docker ${CONTAINER_NAME} with arguments: ${ADDITIONAL_ARGS[@]}"
 echo "Ray start command: ${RAY_START_CMD}"
 echo "VLLM IP address: ${VLLM_NODE_ADDRESS}"
 
-docker run \
-    --entrypoint /bin/bash \
-    --network host \
-    --name "${CONTAINER_NAME}" \
-    --shm-size 10.24g \
-    --gpus all \
-    -v "${PATH_TO_HF_HOME}:/root/.cache/huggingface" \
-    -e VLLM_HOST_IP=${VLLM_NODE_ADDRESS} \
-    -e NCCL_DEBUG="TRACE" \
-    -e VLLM_LOGGING_LEVEL="DEBUG" \
-    -e CUDA_LAUNCH_BLOCKING="1" \
-    -e VLLM_TRACE_FUNCTION="0" \
-    -e NCCL_P2P_DISABLE="1" \
-    -e OMP_NUM_THREADS="2" \
-    "${ADDITIONAL_ARGS[@]}" \
-    vllm/vllm-openai -c "${RAY_START_CMD}"
+# docker run \
+#     --entrypoint /bin/bash \
+#     --network host \
+#     --name "${CONTAINER_NAME}" \
+#     --shm-size 10.24g \
+#     --gpus all \
+#     -v "${PATH_TO_HF_HOME}:/root/.cache/huggingface" \
+#     -e VLLM_HOST_IP=${VLLM_NODE_ADDRESS} \
+#     "${ADDITIONAL_ARGS[@]}" \
+#     vllm/vllm-openai -c "${RAY_START_CMD}"
