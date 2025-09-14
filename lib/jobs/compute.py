@@ -35,8 +35,6 @@ def compute_setup(
 def cpu_compute(job: Job, options: Options, data: np.ndarray, **kwargs) -> Task:
     x = np.random.rand()
     y = data * x
-    raise ValueError('qq')
-
     return Task.from_output(
         parent=job,
         options=options,

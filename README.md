@@ -1,19 +1,18 @@
 # Distributed computing
 
-Цель проекта - исследования технологий распределенных вычислений
-с использованием платформы [Ray](https://docs.ray.io/en/latest/index.html)
+This is a project to explore very advance distributing computing framework of [Ray](https://docs.ray.io/en/latest/index.html)
 
-## Требования
+## Requirements
 
-Python 3.12.10 (номер версии должен быть именно такой, если нет - нужно поменять)
+Python 3.12.10
 
-## Установка
+## Setup
 
-1. Для Windows: установить переменную окружения `RAY_ENABLE_WINDOWS_OR_OSX_CLUSTER` в значение 1
+1. For Windows: set `RAY_ENABLE_WINDOWS_OR_OSX_CLUSTER=1`
 
-2. Создать виртуальное окружение и установить нужные пакеты:
+2. Make virtual environment:
 
-Для Unix:
+Unix:
 
 ```bash
 python3.10 -m venv .venv
@@ -21,7 +20,7 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-Для Windows:
+Windows:
 
 ```powershell
 python3.10 -m venv .venv
@@ -29,49 +28,31 @@ python3.10 -m venv .venv
 pip install -r requirements.txt
 ```
 
-## Запуск кластера
+## Starting cluster
 
-Кластер собирается при запуске головной ноды. 
-Неизвестно будет ли это работать под Windows, поэтому скрипт написан только для Unix.
-Впрочем, можно попробовать запустить его из-под WSL.
-
-Запуск:
+Use:
 
 ```bash
-./start_cluster.sh <адрес кластера>
+./start_cluster.sh <address>
 ```
 
-Адрес кластера может быть опущен, тогда кластер будет запущен локально.
+where <address> is optional public cluster address.
 
-Если же нужно обеспечить подключение через Интернет, то нужно указать адрес, доступный всем потенциальным нодам. 
-Например, в моей конфигурации адрес кластера во внутренней сети будет `192.168.0.7`, а во внешней - `95.31.13.220`.
+## Starting node
 
-## Запуск ноды
-
-Нода запускается следующей командой:
+Use:
 
 ```bash
-ray start --address='<адрес кластера>:6379' --node-manager-port 43403  --num-cpus 1 --verbose
+./start_node.sh <address>
 ```
 
-Ключ `--address` нужно указывать только если подключение идет к внешнему кластеру.
+or
 
-Необходимо также убедиться что порты 43403 и 10001-19999 открыты на всех файрволах и доступны снаружи (список будет уточняться).
-
-## Проверка
-
-Проверка работоспособности кластера производится запуском скриптов test_xxx.py, например:
-
-``` bash
-python test_core.py <адрес кластера>:10001
+```powershell
+.\start_node.ps1 <address>
 ```
 
-Адрес кластера, как и везде, опционален - если он не указан, будет подключение к локальному кластеру
+where the <address> is a cluster public address.
 
-## Остановка
+Make sure that 44403 and 10001-19999 ports are opened on firewall.
 
-После завершения работы ноду и кластер следует остановить:
-
-``` bash
-ray stop
-```
