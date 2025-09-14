@@ -66,22 +66,19 @@ if [[ ! -d "$PATH_TO_HF_HOME" ]]; then
     PATH_TO_HF_HOME="${LOCAL_HF}"
 fi
 
-# Preserve any extra arguments for the docker.
+# Keep extra arguments for the docker
 ADDITIONAL_ARGS=("$@")
 
-# Generate a unique container name with random suffix.
-# Docker container names must be unique on each host.
-# The random suffix allows multiple Ray containers to run simultaneously on the same machine,
-# for example, on a multi-GPU machine.
-CONTAINER_NAME="node-${RANDOM}"
+# Generate a unique container name with random suffix for worker nodes
+# For the head node, fixed name is used
+if [ "${NODE_TYPE}" == "--head" ]; then
+    CONTAINER_NAME="ray-head"
+else
+    CONTAINER_NAME="ray-worker-${RANDOM}"
+fi
 
-# Define a cleanup routine that removes the container when the script exits.
-# This prevents orphaned containers from accumulating if the script is interrupted.
-cleanup() {
-    docker stop "${CONTAINER_NAME}" >/dev/null 2>&1
-    docker rm "${CONTAINER_NAME}" >/dev/null 2>&1
-}
-trap cleanup EXIT
+# Obtain a host IP address (must be provided to VLLM)
+VLLM_NODE_ADDRESS=$(hostname -I | cut -d' ' -f1)
 
 # Build the Ray start command based on the node role.
 # The head node manages the cluster and accepts connections on port 6379, 
@@ -92,17 +89,25 @@ if [ "${NODE_TYPE}" == "--head" ]; then
 else
     RAY_START_CMD+=" --address=${HEAD_NODE_ADDRESS}:6379"
 fi
-echo "Ray start command: ${RAY_START_CMD}"
 
-# Build the VLLM command (for head node only)
+# Define a cleanup routine that removes the container when the script exits.
+# This prevents orphaned containers from accumulating if the script is interrupted.
+cleanup() {
+    docker stop "${CONTAINER_NAME}" >/dev/null 2>&1
+    docker rm "${CONTAINER_NAME}" >/dev/null 2>&1
+}
+trap cleanup EXIT
+
+# Build the VLLM command for head node only
 # VLLM_SERVE_CMD=""
 # if [ "${NODE_TYPE}" == "--head" ]; then
 #     VLLM_SERVE_CMD="&& vllm serve Qwen/Qwen3-0.6B --port 8080 --gpu_memory_utilization 0.9 pipeline_parallel_size=1"
 
-# Launch the container with the assembled parameters.
-# --network host: Allows Ray nodes to communicate directly via host networking
-# --shm-size 10.24g: Increases shared memory
-# --gpus all: Gives container access to all GPUs on the host
+# Launch the docker
+echo "Launching docker ${CONTAINER_NAME}, extra arguments: ${ADDITIONAL_ARGS[@]}"
+echo "Ray start command: ${RAY_START_CMD}"
+echo "VLLM IP address: ${VLLM_NODE_ADDRESS}"
+
 docker run \
     --entrypoint /bin/bash \
     --network host \
@@ -110,6 +115,12 @@ docker run \
     --shm-size 10.24g \
     --gpus all \
     -v "${PATH_TO_HF_HOME}:/root/.cache/huggingface" \
-    -e VLLM_HOST_IP=${HEAD_NODE_ADDRESS} \
+    -e VLLM_HOST_IP=${VLLM_NODE_ADDRESS} \
+    -e NCCL_DEBUG="TRACE" \
+    -e VLLM_LOGGING_LEVEL="DEBUG" \
+    -e CUDA_LAUNCH_BLOCKING="1" \
+    -e VLLM_TRACE_FUNCTION="0" \
+    -e NCCL_P2P_DISABLE="1" \
+    -e OMP_NUM_THREADS="2" \
     "${ADDITIONAL_ARGS[@]}" \
     vllm/vllm-openai -c "${RAY_START_CMD}"
