@@ -94,6 +94,11 @@ else
 fi
 echo "Ray start command: ${RAY_START_CMD}"
 
+# Build the VLLM command (for head node only)
+# VLLM_SERVE_CMD=""
+# if [ "${NODE_TYPE}" == "--head" ]; then
+#     VLLM_SERVE_CMD="&& vllm serve Qwen/Qwen3-0.6B --port 8080 --gpu_memory_utilization 0.9 pipeline_parallel_size=1"
+
 # Launch the container with the assembled parameters.
 # --network host: Allows Ray nodes to communicate directly via host networking
 # --shm-size 10.24g: Increases shared memory
