@@ -80,7 +80,7 @@ ADDITIONAL_ARGS=(
     "-e VLLM_TRACE_FUNCTION=\"0\""
     "-e NCCL_P2P_DISABLE=\"1\""
     "-e OMP_NUM_THREADS=\"2\""
-    "-e GLOO_SOCKET_IFNAME=\"{HOST_IFNAME}\""
+    "-e GLOO_SOCKET_IFNAME=\"${HOST_IFNAME}\""
 )
 ADDITIONAL_ARGS+=("$@")
 
@@ -127,6 +127,6 @@ docker run \
     --shm-size 10.24g \
     --gpus all \
     -v "${PATH_TO_HF_HOME}:/root/.cache/huggingface" \
-    HOSTLLM_HOST_IP=${NODE_IP} \
+    -e VLLM_HOST_IP=${NODE_IP} \
     "${ADDITIONAL_ARGS[@]}" \
     vllm/vllm-openai -c "${RAY_START_CMD}"
