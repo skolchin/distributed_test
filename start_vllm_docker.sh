@@ -34,7 +34,7 @@ if [ $# -eq 0    ]; then
     exit 1
 fi
 
-# Extract the node type
+# Extract and check the node type
 NODE_TYPE="$1"
 shift 1
 
@@ -43,18 +43,10 @@ if [ "${NODE_TYPE}" != "--head" ] && [ "${NODE_TYPE}" != "--worker" ]; then
     exit 1
 fi
 
-if [ "${NODE_TYPE}" == "--head" ]; then
-    HEAD_NODE_ADDRESS=$(hostname -I | cut -d' ' -f1)
-    echo "Cluster IP address will be ${HEAD_NODE_ADDRESS}"
-else
-    HEAD_NODE_ADDRESS="$1"
-    shift 1
-
-    if [[ -z $HEAD_NODE_ADDRESS ]]; then
-        echo "Error: head node address must be specified if node type is --worker"
-        exit 1
-    fi
-fi
+# Obtain a host IP address (must be provided to VLLM)
+# Also, find a primary interface for this address
+HOST_IP=$(hostname -I | cut -d' ' -f1)
+HOST_IFNAME=$(n=$(ifconfig | grep -n "${HOST_IP}" | cut -d: -f1); ifconfig | sed -n "$((n-1))p" | cut -d: -f1)
 
 # Check for HF cache presence
 PATH_TO_HF_HOME="${HOME}/.cache/huggingface"
@@ -66,6 +58,20 @@ if [[ ! -d "$PATH_TO_HF_HOME" ]]; then
     PATH_TO_HF_HOME="${LOCAL_HF}"
 fi
 
+# Determine cluster head address
+if [ "${NODE_TYPE}" == "--head" ]; then
+    HEAD_NODE_ADDRESS=$HOST_IP
+    echo "Cluster IP address will be ${HEAD_NODE_ADDRESS}"
+else
+    HEAD_NODE_ADDRESS="$1"
+    shift 1
+
+    if [[ -z $HEAD_NODE_ADDRESS ]]; then
+        echo "Error: head node address must be specified if node type is --worker"
+        exit 1
+    fi
+fi
+
 # Build docker arguments with some predefines
 ADDITIONAL_ARGS=(
     "-e NCCL_DEBUG=\"TRACE\""
@@ -74,6 +80,7 @@ ADDITIONAL_ARGS=(
     "-e VLLM_TRACE_FUNCTION=\"0\""
     "-e NCCL_P2P_DISABLE=\"1\""
     "-e OMP_NUM_THREADS=\"2\""
+    "-e GLOO_SOCKET_IFNAME=\"{HOST_IFNAME}\""
 )
 ADDITIONAL_ARGS+=("$@")
 
@@ -84,9 +91,6 @@ if [ "${NODE_TYPE}" == "--head" ]; then
 else
     CONTAINER_NAME="ray-worker-${RANDOM}"
 fi
-
-# Obtain a host IP address (must be provided to VLLM)
-VLLM_NODE_ADDRESS=$(hostname -I | cut -d' ' -f1)
 
 # Build the Ray start command based on the node role.
 # The head node manages the cluster and accepts connections on port 6379, 
@@ -112,9 +116,9 @@ trap cleanup EXIT
 #     VLLM_SERVE_CMD="&& vllm serve Qwen/Qwen3-0.6B --port 8080 --gpu_memory_utilization 0.9 pipeline_parallel_size=1"
 
 # Launch the docker
+HOST "Host IP address: ${NODE_IP}, net interface ${HOST_IFNAME}"
 echo "Launching docker ${CONTAINER_NAME} with arguments: ${ADDITIONAL_ARGS[@]}"
 echo "Ray start command: ${RAY_START_CMD}"
-echo "VLLM IP address: ${VLLM_NODE_ADDRESS}"
 
 docker run \
     --entrypoint /bin/bash \
@@ -123,6 +127,6 @@ docker run \
     --shm-size 10.24g \
     --gpus all \
     -v "${PATH_TO_HF_HOME}:/root/.cache/huggingface" \
-    -e VLLM_HOST_IP=${VLLM_NODE_ADDRESS} \
+    HOSTLLM_HOST_IP=${NODE_IP} \
     "${ADDITIONAL_ARGS[@]}" \
     vllm/vllm-openai -c "${RAY_START_CMD}"
