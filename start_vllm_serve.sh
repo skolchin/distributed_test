@@ -4,14 +4,24 @@
 # Must run on a cluster started by ./start_vllm_docker.sh
 
 # Check for minimum number of required arguments
-if [ $# -eq 0    ]; then
-    echo "Usage: $0 model [additional_args...]"
+if [ $# -eq 0 ]; then
+    echo "Usage: $0 model [huggingface_api_key] [additional_args...]"
     exit 1
 fi
 
 # Get the model name
 MODEL="$1"
+if [[ -z "${MODEL}" ]]; then
+    echo "Model name is required"
+    exit 1
+fi
 shift 1
+
+# Check the API key is provided
+if [[ "${1}" == "hf*" ]]; then
+    HF_API_KEY="${1}"
+    shift 1
+fi
 
 # Check the docker is running
 DOCKER_ID=$(docker ps -f name="ray-head" -q)
@@ -28,10 +38,14 @@ if [[ -z "${NUM_GPU}" ]] || [[ NUM_GPU -eq 0 ]]; then
     exit 1
 fi
 
+# Download the model
+docker cp _download_model.sh $DOCKER_ID:/tmp > /dev/null 2>&1
+docker exec -it $DOCKER_ID bash /tmp/_download_model.sh $MODEL $HF_API_KEY
+
 # Find out package versions
 VERSIONS=$(docker exec $DOCKER_ID python3 -c "import ray, vllm; print(ray.__version__, '/', vllm.__version__)")
 
-# Build vllm arguments assuming some are predefined
+# Build vllm arguments assuming some predefines
 # This assumes that each node has only 1 GPU, more sophisticated logic need if is not so
 ADDITIONAL_ARGS=(
     "--gpu-memory-utilization" "0.9"

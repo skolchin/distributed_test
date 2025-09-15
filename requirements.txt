@@ -7,6 +7,9 @@ torch
 torchvision
 torchmetrics
 
+# HF
+huggingface_hub[cli]
+
 # vllm
 vllm
 #flashinfer-python

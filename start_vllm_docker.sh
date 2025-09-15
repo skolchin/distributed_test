@@ -72,7 +72,7 @@ else
     fi
 fi
 
-# Build docker arguments assuming some predefined ones
+# Build docker arguments assuming some predefines
 ADDITIONAL_ARGS=(
     "-e" "NCCL_DEBUG=trace"
     "-e" "VLLM_LOGGING_LEVEL=debug"
@@ -97,9 +97,9 @@ fi
 # Build the Ray start command based on the node role.
 # The head node manages the cluster and accepts connections on port 6379, 
 # while workers connect to the head's address.
-RAY_START_CMD="ray start --block --disable-usage-stats"
+RAY_START_CMD="ray start --block"
 if [ "${NODE_TYPE}" == "--head" ]; then
-    RAY_START_CMD+=" --head --port=6379"
+    RAY_START_CMD+=" --head --port=6379 --disable-usage-stats"
 else
     RAY_START_CMD+=" --address=${HEAD_NODE_ADDRESS}:6379"
 fi
@@ -110,11 +110,6 @@ cleanup() {
     docker stop "${CONTAINER_NAME}" >/dev/null 2>&1 && docker rm "${CONTAINER_NAME}" >/dev/null 2>&1
 }
 trap cleanup EXIT
-
-# Build the VLLM command for head node only
-# VLLM_SERVE_CMD=""
-# if [ "${NODE_TYPE}" == "--head" ]; then
-#     VLLM_SERVE_CMD="&& vllm serve Qwen/Qwen3-0.6B --port 8080 --gpu_memory_utilization 0.9 pipeline_parallel_size=1"
 
 # Launch the docker
 echo "Host IP address: ${HOST_IP} on ${HOST_IFNAME}"
