@@ -28,9 +28,9 @@
 # To stop the container, use:
 #       docker stop node-<random_suffix>
 
-# Check for minimum number of required arguments.
+# Check for minimum number of required arguments
 if [ $# -eq 0    ]; then
-    echo "Usage: $0 --head|--worker [head_node_ip] [additional_args...]"
+    echo "Usage: $0 --head | [--worker head_node_ip] [additional_args...]"
     exit 1
 fi
 
@@ -72,7 +72,7 @@ else
     fi
 fi
 
-# Build docker arguments with some predefines
+# Build docker arguments assuming some predefined ones
 ADDITIONAL_ARGS=(
     "-e" "NCCL_DEBUG=trace"
     "-e" "VLLM_LOGGING_LEVEL=debug"
@@ -107,8 +107,7 @@ fi
 # Define a cleanup routine that removes the container when the script exits.
 # This prevents orphaned containers from accumulating if the script is interrupted.
 cleanup() {
-    docker stop "${CONTAINER_NAME}" >/dev/null 2>&1
-    docker rm "${CONTAINER_NAME}" >/dev/null 2>&1
+    docker stop "${CONTAINER_NAME}" >/dev/null 2>&1 && docker rm "${CONTAINER_NAME}" >/dev/null 2>&1
 }
 trap cleanup EXIT
 
@@ -118,8 +117,8 @@ trap cleanup EXIT
 #     VLLM_SERVE_CMD="&& vllm serve Qwen/Qwen3-0.6B --port 8080 --gpu_memory_utilization 0.9 pipeline_parallel_size=1"
 
 # Launch the docker
-HOST "Host IP address: ${NODE_IP}, net interface ${HOST_IFNAME}"
-echo "Launching docker ${CONTAINER_NAME} with arguments: ${ADDITIONAL_ARGS[@]}"
+echo "Host IP address: ${HOST_IP} on ${HOST_IFNAME}"
+echo "Docker ${CONTAINER_NAME} arguments: ${ADDITIONAL_ARGS[@]}"
 echo "Ray start command: ${RAY_START_CMD}"
 
 docker run \
@@ -129,6 +128,6 @@ docker run \
     --shm-size 10.24g \
     --gpus all \
     -v "${PATH_TO_HF_HOME}:/root/.cache/huggingface" \
-    -e VLLM_HOST_IP=${NODE_IP} \
+    -e VLLM_HOST_IP=${HOST_IP} \
     "${ADDITIONAL_ARGS[@]}" \
     vllm/vllm-openai -c "${RAY_START_CMD}"

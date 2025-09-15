@@ -7,8 +7,9 @@ client = OpenAI(
 completion = client.chat.completions.create(
     model="Qwen/Qwen3-0.6B",
     messages=[
-        {"role": "user", "content": "Hello!"}
+        {"role": "user", "content": "Hello, how are you?"}
     ]
 )
 
-print(completion.choices[0].message)
+for line in (completion.choices[0].message.content or '').splitlines():
+    print(line)
