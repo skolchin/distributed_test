@@ -62,6 +62,8 @@ services:
       - net
     profiles:
       - vllm
+    depends_on:
+      - server:
 
 volumes:
   ray-tmp:

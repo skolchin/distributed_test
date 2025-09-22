@@ -19,9 +19,9 @@ export NCCL_SOCKET_IFNAME=${HOST_IFNAME}
 # echo "Environment: $(env)"
 tail -f /dev/null
 
-# vllm serve $MODEL \
-#     --gpu-memory-utilization 0.9 \
-#     --port 8080 \
-#     --enable-prefix-caching \
-#     --distributed-executor-backend ray \
-#     --pipeline-parallel-size 1
+vllm serve $MODEL \
+    --gpu-memory-utilization 0.9 \
+    --port 8080 \
+    --enable-prefix-caching \
+    --distributed-executor-backend ray \
+    --pipeline-parallel-size 1
