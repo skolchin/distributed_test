@@ -45,7 +45,7 @@ services:
       - MODEL=${MODEL:-Qwen/Qwen3-0.6B}
       - NCCL_DEBUG=trace
       - VLLM_LOGGING_LEVEL=debug
-      - CUDA_LAUNCH_BLOCKING=1
+      - CUDA_LAUNCH_BLOCKING=0
       - VLLM_TRACE_FUNCTION=0
       - NCCL_P2P_DISABLE=1
       - OMP_NUM_THREADS=2

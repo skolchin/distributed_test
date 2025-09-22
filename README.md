@@ -1,58 +1,33 @@
 # Distributed computing
 
-This is a project to explore very advance distributing computing framework of [Ray](https://docs.ray.io/en/latest/index.html)
-
-## Requirements
-
-Python 3.12.10
-
-## Setup
-
-1. For Windows: set `RAY_ENABLE_WINDOWS_OR_OSX_CLUSTER=1`
-
-2. Make virtual environment:
-
-Unix:
-
-```bash
-python3.10 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-```
-
-Windows:
-
-```powershell
-python3.10 -m venv .venv
-.\.venv\scripts\activate.ps1
-pip install -r requirements.txt
-```
+This is a project to explore very advanced distributed computing framework of [Ray](https://docs.ray.io/en/latest/index.html)
 
 ## Starting cluster
 
-Use:
+Run:
 
 ```bash
-./start_cluster.sh <address>
+docker compose --profile server up -d --build
 ```
 
-where <address> is optional public cluster address.
+## Starting a node
 
-## Starting node
+TBD
 
-Use:
+
+## Starting vLLM model
+
+After starting the cluster, run:
 
 ```bash
-./start_node.sh <address>
+docker compose --profile vllm up -d --build
 ```
 
-or
+This will load default model (`Qwen/Qwen3-0.6B`) and serve it with vLLM on the Ray cluster.
+See `test_vllm.py` on how to use it.
 
-```powershell
-.\start_node.ps1 <address>
+To start arbitrary model, set `MODEL` variable before starting up, like:
+
+```bash
+MODEL='Qwen/Qwen3-4B-Thinking-2507' docker compose --profile vllm up -d --build
 ```
-
-where the <address> is a cluster public address.
-
-Make sure that 44403 and 10001-19999 ports are opened on firewall.
-
