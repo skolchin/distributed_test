@@ -1,0 +1,60 @@
+name: ray
+
+services:
+  server:
+    image: ray-server
+    hostname: ray-server
+    shm_size: '10gb'
+    build:
+      context: .
+      dockerfile: ./Dockerfile.server
+    ports:
+      - "6379:6379"
+    volumes:
+      - ./.ray_tmp:/tmp
+    user: "${UID:-1000}:${GID:-1000}"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    networks:
+      - net
+    profiles:
+      - server
+
+  vllm:
+    image: ray-vllm
+    build:
+      context: .
+      dockerfile: ./Dockerfile.vllm
+      args:
+        MODEL: ${MODEL:-Qwen/Qwen3-0.6B}
+        VLLM_UID: ${UID:-1000}
+        VLLM_GID: ${GID:-1000}
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./.models:/home/vllm/.cache/huggingface/hub
+      - ./.ray_tmp:/tmp
+    environment:
+      - RAY_ADDRESS=ray-server:6379
+    user: "${UID:-1000}:${GID:-1000}"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    networks:
+      - net
+    profiles:
+      - vllm
+
+networks:
+  net:
+    # driver: host
+    # attachable: true

@@ -39,7 +39,7 @@ if [[ -z "${NUM_GPU}" ]] || [[ NUM_GPU -eq 0 ]]; then
 fi
 
 # Download the model
-docker cp _download_model.sh $DOCKER_ID:/tmp > /dev/null 2>&1
+docker cp ./docker/download_model.sh $DOCKER_ID:/tmp > /dev/null 2>&1
 docker exec -it $DOCKER_ID bash /tmp/_download_model.sh $MODEL $HF_API_KEY
 
 # Find out package versions
@@ -51,6 +51,7 @@ ADDITIONAL_ARGS=(
     "--gpu-memory-utilization" "0.9"
     "--port" "8080"
     "--pipeline-parallel-size" "${NUM_GPU}"
+    "--enable-prefix-caching"
 )
 ADDITIONAL_ARGS+=("$@")
 

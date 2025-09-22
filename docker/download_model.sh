@@ -1,14 +1,15 @@
 #!/bin/bash
 
+echo "Starting under ${UID}:${GID}"
+
 if [[ -z $(hf cache scan | grep "${1}") ]]; then
     echo "Model ${1} was not found in cache"
 
-    if [[ -z "${2}" ]]; then
+    if [[ -z "${HUGGINGFACE_API_KEY}" ]]; then
         echo "Warning: HuggingFace API key is not provided, new model download might fail"
     else
         echo "Logging in to HuggingFace"
-        hf auth login --token $2 > /dev/null || (echo "Error while logging in, check your API key is correct"  && exit 1)
-        export HUGGINGFACE_API_KEY=$2
+        hf auth login --token "${HUGGINGFACE_API_KEY}" > /dev/null || (echo "Error while logging in, check your API key is correct"  && exit 1)
     fi
 
     echo "Downloading model ${1}"
