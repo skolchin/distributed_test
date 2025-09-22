@@ -1,0 +1,6 @@
+huggingface_hub[cli]
+vllm
+ray[data,train,tune,serve]
+nbformat
+ipykernel
+ipywidgets

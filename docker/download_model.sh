@@ -1,9 +1,7 @@
 #!/bin/bash
 
-echo "Starting under ${UID}:${GID}"
-
-if [[ -z $(hf cache scan | grep "${1}") ]]; then
-    echo "Model ${1} was not found in cache"
+if ! hf cache scan | grep "${1}" > /dev/null; then
+    echo "Model ${1} was NOT found in cache, trying to download"
 
     if [[ -z "${HUGGINGFACE_API_KEY}" ]]; then
         echo "Warning: HuggingFace API key is not provided, new model download might fail"

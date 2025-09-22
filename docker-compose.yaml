@@ -11,7 +11,7 @@ services:
     ports:
       - "6379:6379"
     volumes:
-      - ./.ray_tmp:/tmp
+      - ray-tmp:/tmp
     user: "${UID:-1000}:${GID:-1000}"
     deploy:
       resources:
@@ -37,10 +37,19 @@ services:
     ports:
       - "8000:8000"
     volumes:
-      - ./.models:/home/vllm/.cache/huggingface/hub
-      - ./.ray_tmp:/tmp
+      - models:/home/vllm/.cache/huggingface/hub
+      - ray-tmp:/tmp
     environment:
       - RAY_ADDRESS=ray-server:6379
+      - HUGGINGFACE_API_KEY=${HUGGINGFACE_API_KEY}
+      - MODEL=${MODEL:-Qwen/Qwen3-0.6B}
+      - NCCL_DEBUG=trace
+      - VLLM_LOGGING_LEVEL=debug
+      - CUDA_LAUNCH_BLOCKING=1
+      - VLLM_TRACE_FUNCTION=0
+      - NCCL_P2P_DISABLE=1
+      - OMP_NUM_THREADS=2
+      - NVIDIA_VISIBLE_DEVICES=all
     user: "${UID:-1000}:${GID:-1000}"
     deploy:
       resources:
@@ -53,6 +62,10 @@ services:
       - net
     profiles:
       - vllm
+
+volumes:
+  ray-tmp:
+  models:
 
 networks:
   net:
