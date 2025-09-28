@@ -4,7 +4,6 @@ services:
   server:
     image: ray-server
     hostname: ray-server
-    network_mode: host
     shm_size: '10gb'
     build:
       context: .
@@ -12,8 +11,17 @@ services:
       args:
         RAY_UID: ${UID:-1000}
         RAY_GID: ${GID:-1000}
-    # ports:
-    #   - "6379:6379"
+    ports:
+      - "6379:6379"
+      - "43403:43403"
+      - "43404:43404"
+      - "43405:43405"
+      - "43406:43406"
+      - "43407:43407"
+      - "43408:43408"
+      - "10000:10000"
+      - "10001:10001"
+      - "10002:10002"
     user: "${UID:-1000}:${GID:-1000}"
     volumes:
       - ray-tmp:/tmp
@@ -24,8 +32,8 @@ services:
             - driver: nvidia
               count: all
               capabilities: [gpu]
-    # networks:
-    #   - net
+    networks:
+      - net
     profiles:
       - server
 
@@ -37,8 +45,15 @@ services:
     build:
       context: .
       dockerfile: ./Dockerfile.client
-      args:
-        HEAD: ${HEAD}
+    environment:
+      - RAY_ADDRESS=${HEAD:-192.168.0.7}:6379
+    ports:
+      - "44403:44403"
+      - "44404:44404"
+      - "44405:44405"
+      - "44406:44406"
+      - "44407:44407"
+      - "44408:44408"    
     deploy:
       resources:
         reservations:
@@ -58,13 +73,13 @@ services:
         MODEL: ${MODEL:-Qwen/Qwen3-0.6B}
         VLLM_UID: ${UID:-1000}
         VLLM_GID: ${GID:-1000}
-    # ports:
-    #   - "8000:8000"
+    ports:
+      - "8000:8000"
     volumes:
       - models:/home/vllm/.cache/huggingface/hub
       - ray-tmp:/tmp
     environment:
-      - RAY_ADDRESS=${HEAD:-192.168.0.7}:6379
+      - RAY_ADDRESS=ray-server:6379
       - HUGGINGFACE_API_KEY=${HUGGINGFACE_API_KEY}
       - MODEL=${MODEL:-Qwen/Qwen3-0.6B}
       - NCCL_DEBUG=trace
@@ -82,8 +97,8 @@ services:
             - driver: nvidia
               count: all
               capabilities: [gpu]
-    # networks:
-    #   - net
+    networks:
+      - net
     profiles:
       - vllm
 
@@ -91,7 +106,5 @@ volumes:
   ray-tmp:
   models:
 
-# networks:
-#   net:
-#     driver: host
-#     attachable: true
+networks:
+  net:
