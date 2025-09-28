@@ -1,6 +1,15 @@
 FROM vllm/vllm-openai:latest
 
+ARG RAY_UID=1000
+ARG RAY_GID=1000
+ARG MODEL
+
+RUN groupadd -g ${RAY_GID} app \
+  && useradd --create-home --no-log-init -u ${RAY_UID} -g ${RAY_GID} vllm
+
 ENV RAY_DEDUP_LOGS=0
 ENV NVIDIA_VISIBLE_DEVICES=all
+
+USER $RAY_UID
 
 ENTRYPOINT ["ray", "start", "--block", "--head", "--disable-usage-stats"]

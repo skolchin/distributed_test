@@ -9,8 +9,12 @@ services:
     build:
       context: .
       dockerfile: ./Dockerfile.server
+      args:
+        RAY_UID: ${UID:-1000}
+        RAY_GID: ${GID:-1000}
     # ports:
     #   - "6379:6379"
+    user: "${UID:-1000}:${GID:-1000}"
     volumes:
       - ray-tmp:/tmp
     deploy:
