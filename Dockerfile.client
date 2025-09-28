@@ -2,9 +2,12 @@ FROM vllm/vllm-openai:latest
 
 ARG HEAD='192.168.0.7'
 
+COPY ./docker/start_client.sh /opt/
+RUN chmod +x /opt/start_client.sh
+
 ENV RAY_DEDUP_LOGS=0
 ENV NVIDIA_VISIBLE_DEVICES=all
 ENV RAY_ADDRESS=$HEAD
 
-ENTRYPOINT ["ray"]
-CMD ["start", "--block", "--address"]
+# ENTRYPOINT '/usr/bin/bash'
+ENTRYPOINT "/opt/start_client.sh"

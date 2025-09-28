@@ -30,7 +30,7 @@ services:
     image: ray-client
     hostname: ray-client
     network_mode: host
-    shm_size: '8gb'
+    shm_size: '10gb'
     build:
       context: .
       dockerfile: ./Dockerfile.client
