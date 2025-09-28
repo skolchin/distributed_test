@@ -4,6 +4,7 @@ services:
   server:
     image: ray-server
     hostname: ray-server
+    network_mode: host
     shm_size: '10gb'
     build:
       context: .
@@ -20,14 +21,15 @@ services:
             - driver: nvidia
               count: all
               capabilities: [gpu]
-    networks:
-      - net
+    # networks:
+    #   - net
     profiles:
       - server
 
   client:
     image: ray-client
     hostname: ray-client
+    network_mode: host
     shm_size: '8gb'
     build:
       context: .
@@ -42,8 +44,6 @@ services:
             - driver: nvidia
               count: all
               capabilities: [gpu]
-    networks:
-      - net
     profiles:
       - client
 
@@ -80,18 +80,18 @@ services:
             - driver: nvidia
               count: all
               capabilities: [gpu]
-    networks:
-      - net
+    # networks:
+    #   - net
     profiles:
       - vllm
     depends_on:
-      - server:
+      - server
 
 volumes:
   ray-tmp:
   models:
 
-networks:
-  net:
-    driver: host
-    # attachable: true
+# networks:
+#   net:
+#     driver: host
+#     attachable: true
