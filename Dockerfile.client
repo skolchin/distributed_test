@@ -1,0 +1,10 @@
+FROM vllm/vllm-openai:latest
+
+ARG HEAD='192.168.0.7'
+
+ENV RAY_DEDUP_LOGS=0
+ENV NVIDIA_VISIBLE_DEVICES=all
+ENV RAY_ADDRESS=$HEAD
+
+ENTRYPOINT ["ray"]
+CMD ["start", "--block", "--address"]

@@ -12,7 +12,11 @@ docker compose --profile server up -d --build
 
 ## Starting a node
 
-TBD
+Run:
+
+```bash
+docker compose --profile client up -d --build
+```
 
 
 ## Starting vLLM model
