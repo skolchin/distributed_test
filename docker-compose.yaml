@@ -13,7 +13,6 @@ services:
     #   - "6379:6379"
     volumes:
       - ray-tmp:/tmp
-    user: "${UID:-1000}:${GID:-1000}"
     deploy:
       resources:
         reservations:
@@ -36,7 +35,6 @@ services:
       dockerfile: ./Dockerfile.client
       args:
         HEAD: ${HEAD}
-    user: "${UID:-1000}:${GID:-1000}"
     deploy:
       resources:
         reservations:
