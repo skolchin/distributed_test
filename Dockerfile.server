@@ -2,26 +2,37 @@ FROM vllm/vllm-openai:latest
 
 ARG RAY_UID=1000
 ARG RAY_GID=1000
-ARG MODEL
+
+RUN apt update && apt install -y net-tools
 
 RUN groupadd -g ${RAY_GID} app \
   && useradd --create-home --no-log-init -u ${RAY_UID} -g ${RAY_GID} vllm
+
+RUN mkdir -p /home/vllm/.cache/huggingface/hub/ && \
+  chown -R $RAY_UID:$RAY_GID /home/vllm/.cache/huggingface/
+
+COPY --chown=$RAY_UID:$RAY_GID ./docker/start_server_vllm.sh /home/vllm/start_server_vllm.sh
+COPY --chown=$RAY_UID:$RAY_GID ./docker/download_model.sh /home/vllm/download_model.sh
 
 ENV RAY_DEDUP_LOGS=0
 ENV NVIDIA_VISIBLE_DEVICES=all
 
 USER $RAY_UID
+WORKDIR /home/vllm
 
-ENTRYPOINT ray \
-      start \
-      --block \
-      --head \
-      --disable-usage-stats \
-      --node-manager-port 43403 \
-      --object-manager-port 43404 \
-      --runtime-env-agent-port 43405 \
-      --dashboard-agent-grpc-port 43406 \
-      --dashboard-agent-listen-port 43407 \
-      --metrics-export-port 43408 \
-      --worker-port-list=10000,10001,10002 \
-      --verbose
+ENTRYPOINT ["/bin/bash", "/home/vllm/start_server_vllm.sh"]
+# ENTRYPOINT ["/usr/bin/tail", "-f", "/dev/null"]
+
+# ENTRYPOINT ray \
+#       start \
+#       --block \
+#       --head \
+#       --disable-usage-stats \
+#       --node-manager-port 43403 \
+#       --object-manager-port 43404 \
+#       --runtime-env-agent-port 43405 \
+#       --dashboard-agent-grpc-port 43406 \
+#       --dashboard-agent-listen-port 43407 \
+#       --metrics-export-port 43408 \
+#       --worker-port-list=10000,10001,10002 \
+#       --verbose

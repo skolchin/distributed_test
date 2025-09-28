@@ -1,6 +1,26 @@
 #!/bin/bash
 set -e
 
+# Start the head
+echo "Starting cluster"
+ray \
+      start \
+      --head \
+      --disable-usage-stats \
+      --node-manager-port 43403 \
+      --object-manager-port 43404 \
+      --runtime-env-agent-port 43405 \
+      --dashboard-agent-grpc-port 43406 \
+      --dashboard-agent-listen-port 43407 \
+      --metrics-export-port 43408 \
+      --worker-port-list=10000,10001,10002 \
+      --verbose
+
+echo "Waiting for 30 seconds for nodes to join in"
+sleep 30
+
+echo "Starting VLLM"
+
 # Find out how many GPUS are connected
 NUM_GPU=$(ray status | grep "GPU" | tr '/.' ' ' | cut -d' ' -f4); 
 if [[ -z "${NUM_GPU}" ]] || [[ NUM_GPU -eq 0 ]]; then
@@ -24,9 +44,6 @@ echo "Starting VLLM on ${HOST_IP}:${HOST_IFNAME}"
 export VLLM_HOST_IP=$HOST_IP
 export GLOO_SOCKET_IFNAME=${HOST_IFNAME}
 export NCCL_SOCKET_IFNAME=${HOST_IFNAME}
-
-# echo "Environment: $(env)"
-# tail -f /dev/null
 
 # Start
 vllm serve $MODEL \

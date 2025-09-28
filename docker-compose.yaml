@@ -5,26 +5,38 @@ services:
     image: ray-server
     hostname: ray-server
     shm_size: '10gb'
+    network_mode: host
     build:
       context: .
       dockerfile: ./Dockerfile.server
       args:
         RAY_UID: ${UID:-1000}
         RAY_GID: ${GID:-1000}
-    ports:
-      - "6379:6379"
-      - "43403:43403"
-      - "43404:43404"
-      - "43405:43405"
-      - "43406:43406"
-      - "43407:43407"
-      - "43408:43408"
-      - "10000:10000"
-      - "10001:10001"
-      - "10002:10002"
+    environment:
+      - HUGGINGFACE_API_KEY=${HUGGINGFACE_API_KEY}
+      - MODEL=${MODEL:-Qwen/Qwen3-0.6B}
+      - NCCL_DEBUG=trace
+      - VLLM_LOGGING_LEVEL=debug
+      - CUDA_LAUNCH_BLOCKING=0
+      - VLLM_TRACE_FUNCTION=0
+      - NCCL_P2P_DISABLE=1
+      - OMP_NUM_THREADS=2
+      - NVIDIA_VISIBLE_DEVICES=all
+    # ports:
+    #   - "6379:6379"
+    #   - "8000:8000"
+    #   - "43403:43403"
+    #   - "43404:43404"
+    #   - "43405:43405"
+    #   - "43406:43406"
+    #   - "43407:43407"
+    #   - "43408:43408"
+    #   - "10000:10000"
+    #   - "10001:10001"
+    #   - "10002:10002"
     user: "${UID:-1000}:${GID:-1000}"
     volumes:
-      - ray-tmp:/tmp
+      - models:/home/vllm/.cache/huggingface/hub
     deploy:
       resources:
         reservations:
@@ -32,8 +44,8 @@ services:
             - driver: nvidia
               count: all
               capabilities: [gpu]
-    networks:
-      - net
+    # networks:
+    #   - net
     profiles:
       - server
 
@@ -64,47 +76,47 @@ services:
     profiles:
       - client
 
-  vllm:
-    image: ray-vllm
-    build:
-      context: .
-      dockerfile: ./Dockerfile.vllm
-      args:
-        MODEL: ${MODEL:-Qwen/Qwen3-0.6B}
-        VLLM_UID: ${UID:-1000}
-        VLLM_GID: ${GID:-1000}
-    ports:
-      - "8000:8000"
-    volumes:
-      - models:/home/vllm/.cache/huggingface/hub
-      - ray-tmp:/tmp
-    environment:
-      - RAY_ADDRESS=ray-server:6379
-      - HUGGINGFACE_API_KEY=${HUGGINGFACE_API_KEY}
-      - MODEL=${MODEL:-Qwen/Qwen3-0.6B}
-      - NCCL_DEBUG=trace
-      - VLLM_LOGGING_LEVEL=debug
-      - CUDA_LAUNCH_BLOCKING=0
-      - VLLM_TRACE_FUNCTION=0
-      - NCCL_P2P_DISABLE=1
-      - OMP_NUM_THREADS=2
-      - NVIDIA_VISIBLE_DEVICES=all
-    user: "${UID:-1000}:${GID:-1000}"
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: all
-              capabilities: [gpu]
-    networks:
-      - net
-    profiles:
-      - vllm
+  # vllm:
+  #   image: ray-vllm
+  #   build:
+  #     context: .
+  #     dockerfile: ./Dockerfile.vllm
+  #     args:
+  #       MODEL: ${MODEL:-Qwen/Qwen3-0.6B}
+  #       VLLM_UID: ${UID:-1000}
+  #       VLLM_GID: ${GID:-1000}
+  #   ports:
+  #     - "8000:8000"
+  #   volumes:
+  #     - models:/home/vllm/.cache/huggingface/hub
+  #     - ray-tmp:/tmp
+  #   environment:
+  #     - RAY_ADDRESS=ray-server:6379
+  #     - HUGGINGFACE_API_KEY=${HUGGINGFACE_API_KEY}
+  #     - MODEL=${MODEL:-Qwen/Qwen3-0.6B}
+  #     - NCCL_DEBUG=trace
+  #     - VLLM_LOGGING_LEVEL=debug
+  #     - CUDA_LAUNCH_BLOCKING=0
+  #     - VLLM_TRACE_FUNCTION=0
+  #     - NCCL_P2P_DISABLE=1
+  #     - OMP_NUM_THREADS=2
+  #     - NVIDIA_VISIBLE_DEVICES=all
+  #   user: "${UID:-1000}:${GID:-1000}"
+  #   deploy:
+  #     resources:
+  #       reservations:
+  #         devices:
+  #           - driver: nvidia
+  #             count: all
+  #             capabilities: [gpu]
+  #   networks:
+  #     - net
+  #   profiles:
+  #     - vllm
 
 volumes:
-  ray-tmp:
   models:
+  # ray-tmp:
 
-networks:
-  net:
+# networks:
+#   net:
