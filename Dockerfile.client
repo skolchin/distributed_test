@@ -6,5 +6,4 @@ RUN chmod +x /opt/start_client.sh
 ENV RAY_DEDUP_LOGS=0
 ENV NVIDIA_VISIBLE_DEVICES=all
 
-# ENTRYPOINT '/usr/bin/bash'
-ENTRYPOINT "/opt/start_client.sh"
+ENTRYPOINT ["/usr/bin/bash", "/opt/start_client.sh"]

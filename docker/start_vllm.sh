@@ -25,7 +25,7 @@ HOST_IFNAME=$(n=$(ifconfig | grep -n "${HOST_IP}" | cut -d: -f1); ifconfig | sed
 
 echo "Starting VLLM on ${HOST_IP}:${HOST_IFNAME}"
 
-export VLLM_HOST_IP=${HOST_IP}
+export VLLM_HOST_IP=$HOST_IP
 export GLOO_SOCKET_IFNAME=${HOST_IFNAME}
 export NCCL_SOCKET_IFNAME=${HOST_IFNAME}
 
