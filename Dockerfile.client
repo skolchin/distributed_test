@@ -3,6 +3,8 @@ FROM vllm/vllm-openai:latest
 COPY ./docker/start_client.sh /opt/
 RUN chmod +x /opt/start_client.sh
 
+# RUN pip install -U ray[serve] vllm
+
 ENV RAY_DEDUP_LOGS=0
 ENV NVIDIA_VISIBLE_DEVICES=all
 

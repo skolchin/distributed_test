@@ -15,13 +15,6 @@ services:
     environment:
       - HUGGINGFACE_API_KEY=${HUGGINGFACE_API_KEY}
       - MODEL=${MODEL:-Qwen/Qwen3-0.6B}
-      - NCCL_DEBUG=trace
-      - VLLM_LOGGING_LEVEL=debug
-      - CUDA_LAUNCH_BLOCKING=0
-      - VLLM_TRACE_FUNCTION=0
-      - NCCL_P2P_DISABLE=1
-      - OMP_NUM_THREADS=2
-      - NVIDIA_VISIBLE_DEVICES=all
     # ports:
     #   - "6379:6379"
     #   - "8000:8000"

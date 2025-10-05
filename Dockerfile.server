@@ -9,16 +9,24 @@ RUN groupadd -g ${RAY_GID} app \
   && useradd --create-home --no-log-init -u ${RAY_UID} -g ${RAY_GID} vllm
 
 RUN mkdir -p /home/vllm/.cache/huggingface/hub/ && \
-  chown -R $RAY_UID:$RAY_GID /home/vllm/.cache/huggingface/
+  chown -R $RAY_UID:$RAY_GID /home/vllm/.cache/
+
+# RUN pip install -U ray[serve,dashboard] vllm
 
 COPY --chown=$RAY_UID:$RAY_GID ./docker/start_server_vllm.sh /home/vllm/start_server_vllm.sh
 COPY --chown=$RAY_UID:$RAY_GID ./docker/download_model.sh /home/vllm/download_model.sh
 
-ENV RAY_DEDUP_LOGS=0
-ENV NVIDIA_VISIBLE_DEVICES=all
-
 USER $RAY_UID
 WORKDIR /home/vllm
+
+ENV NCCL_DEBUG=trace
+ENV VLLM_LOGGING_LEVEL=debug
+ENV CUDA_LAUNCH_BLOCKING=0
+ENV VLLM_TRACE_FUNCTION=0
+ENV NCCL_P2P_DISABLE=1
+ENV OMP_NUM_THREADS=2
+ENV NVIDIA_VISIBLE_DEVICES=all
+ENV RAY_DEDUP_LOGS=0
 
 ENTRYPOINT ["/bin/bash", "/home/vllm/start_server_vllm.sh"]
 # ENTRYPOINT ["/usr/bin/tail", "-f", "/dev/null"]

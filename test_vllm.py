@@ -5,7 +5,8 @@ client = OpenAI(
 )
 
 completion = client.chat.completions.create(
-    model="Qwen/Qwen3-4B-Thinking-2507",
+    # model="Qwen/Qwen3-4B-Thinking-2507",
+    model="Qwen/Qwen3-0.6B",
     messages=[
         {"role": "user", "content": "Hello, how are you?"}
     ],
@@ -14,3 +15,5 @@ completion = client.chat.completions.create(
 
 for chunk in completion:
     print(chunk.choices[0].delta.content, end='')
+    
+print()
