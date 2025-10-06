@@ -27,6 +27,7 @@ ENV NCCL_P2P_DISABLE=1
 ENV OMP_NUM_THREADS=2
 ENV NVIDIA_VISIBLE_DEVICES=all
 ENV RAY_DEDUP_LOGS=0
+ENV VLLM_DOCKER_BUILD_CONTEXT=true
 
 ENTRYPOINT ["/bin/bash", "/home/vllm/start_server_vllm.sh"]
 # ENTRYPOINT ["/usr/bin/tail", "-f", "/dev/null"]

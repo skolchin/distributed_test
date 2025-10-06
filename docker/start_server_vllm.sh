@@ -2,7 +2,7 @@
 set -e
 
 # Start the head
-echo "Starting cluster"
+echo "Starting Ray cluster"
 # ray \
 #       start \
 #       --head \
@@ -36,6 +36,9 @@ echo "${NUM_GPU} GPUs detected"
 test $?
 echo "Using model ${MODEL}"
 
+# Info
+# python3 -c "import ray, vllm; print(f'Ray / VLLM version: {ray.__version__} /  {vllm.__version__}')"
+
 # Set environment variables
 HOST_IP=$(hostname -I | cut -d' ' -f1)
 HOST_IFNAME=$(n=$(ifconfig | grep -n "${HOST_IP}" | cut -d: -f1); ifconfig | sed -n "$((n-1))p" | cut -d: -f1)
@@ -45,12 +48,13 @@ echo "Starting VLLM on ${HOST_IP}:${HOST_IFNAME}"
 export VLLM_HOST_IP=$HOST_IP
 export GLOO_SOCKET_IFNAME=${HOST_IFNAME}
 export NCCL_SOCKET_IFNAME=${HOST_IFNAME}
-export VLLM_DOCKER_BUILD_CONTEXT=true
+
+env
 
 # Start
-vllm serve $MODEL \
-    --gpu-memory-utilization 0.9 \
-    --port 8080 \
-    --enable-prefix-caching \
-    --distributed-executor-backend ray \
-    --pipeline-parallel-size $NUM_GPU
+# vllm serve $MODEL \
+#     --gpu-memory-utilization 0.9 \
+#     --port 8080 \
+#     --enable-prefix-caching \
+#     --distributed-executor-backend ray \
+#     --pipeline-parallel-size $NUM_GPU

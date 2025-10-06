@@ -3,7 +3,6 @@ name: ray
 services:
   server:
     image: ray-server
-    hostname: ray-server
     shm_size: '10gb'
     network_mode: host
     build:

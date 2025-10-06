@@ -1,41 +1,91 @@
 # Distributed computing
 
 This is a project to explore very advanced distributed computing framework of [Ray](https://docs.ray.io/en/latest/index.html)
+along with not less sophisticated LLM distributed serving library [vLLM](https://docs.vllm.ai/en/stable/index.html).
 
 ## Setup
 
-A [HuggingFace](http://huggingface.co/) API key is required in order to download models from the hub.
+Primary OS for development is Unix, but Windows should be fine too as all work is done in Docker containers.
+
+Requirements:
+
+1. Modern GPU with at least 8 GB RAM. CPU / RAM is not that important.
+
+2. Python 3.11+. New Python environment is recommended, create it like this:
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+```
+
+3. A [HuggingFace](http://huggingface.co/) API key is required in order to download models from the hub.
 Look at [this guide](https://huggingface.co/docs/hub/en/security-tokens) to find out how to generate one.
 
-Generated API key has to be assigned to `HUGGINGFACE_API_KEY` environment variable or saved to
-`.env` file at project's root directory.
+4. Docker runtime or Docker Desktop.
 
 ## Starting cluster
 
-Run:
+On a head (master) machine, run (for unix):
 
 ```bash
-docker compose --profile server up --build
+./start_docker.sh --head
 ```
 
-This will launch Ray head node (initiating a cluster), wait for 30 sec and
-then launch VLLM serve with a model specified in `MODEL` environment variable.
-The model will be distributed across all nodes which joined the cluster within
-than 30 seconds.
+or (for Windows):
 
-Default model is `Qwen/Qwen3-0.6B`. To start arbitrary model, set `MODEL` variable before starting up, like:
-
-```bash
-MODEL='Qwen/Qwen3-4B-Thinking-2507' docker compose --profile server up --build
+```powershell
+.\start_docker.ps1 -NodeType head
 ```
+
+This will create a Ray cluster and start the head node. Only one head node is needed for a cluster.
+
+Note that this command will not return till the cluster is running.
 
 ## Starting a node
 
-Run:
+On a client computer, run (for unix):
 
 ```bash
-docker compose --profile client up -d --build
+./start_docker.sh --worker head_node_ip
 ```
 
-Note that node must start within 30 seconds after ray cluster initiated, or
-it will not be counted when vllm is started. Dynamic re-allocation is to be done.
+or (for Windows):
+
+```powershell
+.\start_docker.ps1 -NodeType worker -HeadNodeAddress head_node_ip
+```
+
+This will launch a Ray node and join it with the cluster specified by head_node_ip.
+
+Note that this command will not return till the node is running.
+
+## Starting VLLM
+
+On a HEAD node, run (for unix):
+
+```bash
+./start_vllm.sh model [huggingface_api_key] [--additional_args]
+```
+
+or (for Windows):
+
+```powershell
+.\start_vllm.ps1 -Model model [-HuggingfaceApiKey huggingface_api_key] [--additional_args ...]
+```
+
+This will download a model from HuggingFace and serve it with vllm.
+The model will be distributed across all GPU nodes of a cluster.
+
+The model is downloaded only once and saved to `~/.cache/huggingface` directory.
+For example, to serve small Qwen3 model, run:
+
+```bash
+./start_vllm.sh Qwen/Qwen3-0.6B
+```
+
+## Testing VLLM
+
+Run Python script `test_vllm.py` and chat with the model from command line.
+Model which is currently deployed to the cluster will be recognized automatically.
+

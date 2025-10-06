@@ -4,28 +4,21 @@
 # Origin: https://github.com/vllm-project/vllm/blob/main/examples/online_serving/run_cluster.sh
 #
 # This script can start either a head node or a worker node, depending on the
-# --head or --worker flag provided as the third positional argument.
+# --head or --worker flag provided.
 #
 # Usage:
 # 1. Designate one machine as the head node and execute:
-#    bash run_cluster.sh --head ...
+#    bash start_docker.sh --head ...
 #
 # 2. On every worker machine, execute:
-#    bash run_cluster.sh --worker <head_node_ip> ...
+#    bash start_docker.sh --worker <head_node_ip> ...
 # 
 # Any additional arguments might follow the base command.
 #
 # Keep each terminal session open. Closing a session stops the associated Ray
 # node and thereby shuts down the entire cluster.
 #
-# The container is named "node-<random_suffix>". To open a shell inside
-# a container after launch, use:
-#       docker exec -it node-<random_suffix> /bin/bash
-#
-# Then, you can execute vLLM commands on the Ray cluster as if it were a
-# single machine, e.g. vllm serve ...
-#
-# To stop the container, use:
+# To stop the cluster, use:
 #       docker stop node-<random_suffix>
 
 # Check for minimum number of required arguments
@@ -72,13 +65,13 @@ else
     fi
 fi
 
-# Build docker arguments assuming some predefines
+# Build docker arguments assuming some predefined ones
 ADDITIONAL_ARGS=(
     "-e" "NCCL_DEBUG=trace"
     "-e" "VLLM_LOGGING_LEVEL=debug"
     "-e" "CUDA_LAUNCH_BLOCKING=1"
     "-e" "VLLM_TRACE_FUNCTION=0"
-    "-e" "NCCL_P2P_DISABLE=1"
+    "-e" "NCCL_P2P_DISABLE=0"
     "-e" "OMP_NUM_THREADS=2"
     "-e" "GLOO_SOCKET_IFNAME=${HOST_IFNAME}"
     "-e" "NCCL_SOCKET_IFNAME=${HOST_IFNAME}"

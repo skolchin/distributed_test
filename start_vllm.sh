@@ -40,7 +40,7 @@ fi
 
 # Download the model
 docker cp ./docker/download_model.sh $DOCKER_ID:/tmp > /dev/null 2>&1
-docker exec -it $DOCKER_ID bash /tmp/_download_model.sh $MODEL $HF_API_KEY
+docker exec -it $DOCKER_ID bash /tmp/download_model.sh $MODEL $HF_API_KEY
 
 # Find out package versions
 VERSIONS=$(docker exec $DOCKER_ID python3 -c "import ray, vllm; print(ray.__version__, '/', vllm.__version__)")
