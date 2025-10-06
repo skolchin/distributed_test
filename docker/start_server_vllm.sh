@@ -45,6 +45,7 @@ echo "Starting VLLM on ${HOST_IP}:${HOST_IFNAME}"
 export VLLM_HOST_IP=$HOST_IP
 export GLOO_SOCKET_IFNAME=${HOST_IFNAME}
 export NCCL_SOCKET_IFNAME=${HOST_IFNAME}
+export VLLM_DOCKER_BUILD_CONTEXT=true
 
 # Start
 vllm serve $MODEL \
