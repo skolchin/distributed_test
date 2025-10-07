@@ -109,6 +109,7 @@ echo "Host IP address: ${HOST_IP} on ${HOST_IFNAME}"
 echo "Docker ${CONTAINER_NAME} arguments: ${ADDITIONAL_ARGS[@]}"
 echo "Ray start command: ${RAY_START_CMD}"
 
+mkdir -p /tmp/ray
 docker run \
     --entrypoint /bin/bash \
     --network host \
@@ -116,6 +117,8 @@ docker run \
     --shm-size 10.24g \
     --gpus all \
     -v "${PATH_TO_HF_HOME}:/root/.cache/huggingface" \
+    -v /tmp/ray:/tmp/ray \
     -e VLLM_HOST_IP=${HOST_IP} \
     "${ADDITIONAL_ARGS[@]}" \
     vllm/vllm-openai -c "${RAY_START_CMD}"
+    vllm_custom -c "${RAY_START_CMD}"    
