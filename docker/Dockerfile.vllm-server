@@ -3,8 +3,6 @@ FROM vllm/vllm-openai:latest
 ARG RAY_UID=1000
 ARG RAY_GID=1000
 
-RUN apt update && apt install -y net-tools
-
 RUN groupadd -g ${RAY_GID} vllm \
   && useradd --create-home --no-log-init -u ${RAY_UID} -g ${RAY_GID} vllm
 
@@ -15,15 +13,3 @@ RUN pip install -U ray[serve,dashboard] vllm
 
 USER $RAY_UID
 WORKDIR /home/vllm
-
-ENV NCCL_DEBUG=trace
-ENV VLLM_LOGGING_LEVEL=debug
-ENV CUDA_LAUNCH_BLOCKING=0
-ENV VLLM_TRACE_FUNCTION=0
-ENV NCCL_P2P_DISABLE=1
-ENV OMP_NUM_THREADS=2
-ENV NVIDIA_VISIBLE_DEVICES=all
-ENV RAY_DEDUP_LOGS=0
-ENV VLLM_DOCKER_BUILD_CONTEXT=true
-
-ENTRYPOINT "/bin/bash"

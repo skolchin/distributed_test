@@ -1,0 +1,12 @@
+FROM vllm/vllm-openai:latest
+
+ARG RAY_UID=1000
+ARG RAY_GID=1000
+
+RUN groupadd -g ${RAY_GID} vllm \
+  && useradd --create-home --no-log-init -u ${RAY_UID} -g ${RAY_GID} vllm
+
+# RUN pip install -U ray[serve] vllm
+
+USER $RAY_UID
+WORKDIR /home/vllm

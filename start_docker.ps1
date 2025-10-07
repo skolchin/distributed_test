@@ -106,6 +106,18 @@ if ($NodeType -eq "head") {
     $RayStartCmd += " --address=${HeadNodeAddress}:6379"
 }
 
+# Determine image to start with and build it
+if ($NodeType -eq "head") {
+    $ImageName = "vllm-server"
+    $Dockerfile = "./docker/Dockerfile.vllm-server"
+} else {
+    $ImageName = "vllm-client"
+    $Dockerfile = "./docker/Dockerfile.vllm-client"
+}
+
+Write-Host "Building docker image $ImageName"
+docker build -f $Dockerfile -t $ImageName:latest .
+
 # Define cleanup function
 function Cleanup {
     docker stop $ContainerName 2>$null
@@ -130,7 +142,7 @@ $DockerCommand = @(
     "-v", "${PathToHFHome}:/root/.cache/huggingface"
     "-e", "VLLM_HOST_IP=$HostIP"
     $DockerArgs
-    "vllm/vllm-openai"
+    $ImageName
     "-c", $RayStartCmd
 )
 

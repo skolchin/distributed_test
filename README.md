@@ -89,3 +89,17 @@ For example, to serve small Qwen3 model, run:
 Run Python script `test_vllm.py` and chat with the model from command line.
 Model which is currently deployed to the cluster will be recognized automatically.
 
+## Monitoring
+
+To launch Prometheus and Grafana, build and run docker containers. `GRAFANA_ADMIN_PASSWORD` env variable has to be set,
+for example from the command line:
+
+``` bash
+GRAFANA_ADMIN_PASSWORD="secret" docker compose -f ./docker/docker-compose-metrics.yaml up -d --build
+```
+
+
+Prometheus is set up to collect ray and vllm metrics automatically. Its UI
+is available at http://localhost:9090/.
+
+Grafana is currently launched as is.

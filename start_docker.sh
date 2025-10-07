@@ -92,10 +92,22 @@ fi
 # while workers connect to the head's address.
 RAY_START_CMD="ray start --block"
 if [ "${NODE_TYPE}" == "--head" ]; then
-    RAY_START_CMD+=" --head --port=6379 --disable-usage-stats"
+    RAY_START_CMD+=" --head --port=6379 --disable-usage-stats --metrics-export-port=8081"
 else
     RAY_START_CMD+=" --address=${HEAD_NODE_ADDRESS}:6379"
 fi
+
+# Determine image to start with and build it
+if [ "${NODE_TYPE}" == "--head" ]; then
+    IMAGE_NAME="vllm-server"
+    DOCKERFILE="./docker/Dockerfile.vllm-server"
+else
+    IMAGE_NAME="vllm-client"
+    DOCKERFILE="./docker/Dockerfile.vllm-client"
+fi
+
+echo "Building docker image $IMAGE_NAME"
+docker build -f $DOCKERFILE -t $IMAGE_NAME:latest .
 
 # Define a cleanup routine that removes the container when the script exits.
 # This prevents orphaned containers from accumulating if the script is interrupted.
@@ -106,8 +118,8 @@ trap cleanup EXIT
 
 # Launch the docker
 echo "Host IP address: ${HOST_IP} on ${HOST_IFNAME}"
-echo "Docker ${CONTAINER_NAME} arguments: ${ADDITIONAL_ARGS[@]}"
 echo "Ray start command: ${RAY_START_CMD}"
+echo "Staring docker ${CONTAINER_NAME} from ${IMAGE_NAME} with arguments: ${ADDITIONAL_ARGS[@]}"
 
 mkdir -p /tmp/ray
 docker run \
@@ -116,9 +128,8 @@ docker run \
     --name "${CONTAINER_NAME}" \
     --shm-size 10.24g \
     --gpus all \
-    -v "${PATH_TO_HF_HOME}:/root/.cache/huggingface" \
+    -v "${PATH_TO_HF_HOME}:/home/vllm/.cache/huggingface" \
     -v /tmp/ray:/tmp/ray \
     -e VLLM_HOST_IP=${HOST_IP} \
     "${ADDITIONAL_ARGS[@]}" \
-    vllm/vllm-openai -c "${RAY_START_CMD}"
-    vllm_custom -c "${RAY_START_CMD}"    
+    $IMAGE_NAME -c "${RAY_START_CMD}"
