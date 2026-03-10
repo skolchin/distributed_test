@@ -55,6 +55,7 @@ ADDITIONAL_ARGS=(
     "--port" "8080"
     "--tensor-parallel-size" "1"
     "--pipeline-parallel-size" "${NUM_GPU}"
+    "--kv-cache-dtype" "fp8"
 )
 ADDITIONAL_ARGS+=("$@")
 
