@@ -40,9 +40,6 @@ fi
 HOST_IP=$(hostname -I | cut -d' ' -f1)
 HOST_IFNAME=$(n=$(ifconfig | grep -n "${HOST_IP}" | cut -d: -f1); ifconfig | sed -n "$((n-1))p" | cut -d: -f1)
 
-# temporary override
-HOST_IFNAME="wlo1,eno1"
-
 # Check for HF cache presence
 PATH_TO_HF_HOME="${HOME}/.cache/huggingface"
 if [[ ! -d "$PATH_TO_HF_HOME" ]]; then
@@ -76,7 +73,7 @@ ADDITIONAL_ARGS=(
     "-e" "NCCL_P2P_DISABLE=0"
     "-e" "OMP_NUM_THREADS=2"
     "-e" "GLOO_SOCKET_IFNAME=${HOST_IFNAME}"
-    "-e" "NCCL_SOCKET_IFNAME=${HOST_IFNAME}"
+    "-e" "NCCL_SOCKET_IFNAME=wlo1,eno1"
     "-e" "RAY_DEDUP_LOGS=0"
 )
 ADDITIONAL_ARGS+=("$@")
