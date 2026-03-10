@@ -3,6 +3,8 @@
 # Launch vLLM serve with an LLM model
 # Must run on a cluster started by ./start_vllm_docker.sh
 
+# set -x
+
 # Check for minimum number of required arguments
 if [ $# -eq 0 ]; then
     echo "Usage: $0 model [huggingface_api_key] [additional_args...]"
@@ -18,7 +20,7 @@ fi
 shift 1
 
 # Check the API key is provided
-if [[ "${1}" == "hf*" ]]; then
+if [[ "${1}" == hf* ]]; then
     HF_API_KEY="${1}"
     shift 1
 fi
@@ -48,10 +50,11 @@ VERSIONS=$(docker exec $DOCKER_ID python3 -c "import ray, vllm; print(ray.__vers
 # Build vllm arguments assuming some predefines
 # This assumes that each node has only 1 GPU, more sophisticated logic need if is not so
 ADDITIONAL_ARGS=(
+    "--distributed-executor-backend" "ray"
     "--gpu-memory-utilization" "0.9"
     "--port" "8080"
+    "--tensor-parallel-size" "1"
     "--pipeline-parallel-size" "${NUM_GPU}"
-    "--enable-prefix-caching"
 )
 ADDITIONAL_ARGS+=("$@")
 

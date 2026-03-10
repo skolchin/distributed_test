@@ -75,7 +75,7 @@ if ($NodeType -eq "head") {
 
 # Build docker arguments
 $DockerArgs = @(
-    "-e", "NCCL_DEBUG=trace"
+    "-e", "NCCL_DEBUG=warn"
     "-e", "VLLM_LOGGING_LEVEL=debug"
     "-e", "CUDA_LAUNCH_BLOCKING=1"
     "-e", "VLLM_TRACE_FUNCTION=0"

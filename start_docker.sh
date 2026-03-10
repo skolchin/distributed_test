@@ -36,10 +36,12 @@ if [ "${NODE_TYPE}" != "--head" ] && [ "${NODE_TYPE}" != "--worker" ]; then
     exit 1
 fi
 
-# Obtain a host IP address (must be provided to VLLM)
-# Also, find a primary interface for this address
+# Obtain a host IP address (must be provided to VLLM) and find a primary interface for this address
 HOST_IP=$(hostname -I | cut -d' ' -f1)
 HOST_IFNAME=$(n=$(ifconfig | grep -n "${HOST_IP}" | cut -d: -f1); ifconfig | sed -n "$((n-1))p" | cut -d: -f1)
+
+# temporary override
+HOST_IFNAME="wlo1,eno1"
 
 # Check for HF cache presence
 PATH_TO_HF_HOME="${HOME}/.cache/huggingface"
@@ -67,8 +69,8 @@ fi
 
 # Build docker arguments assuming some predefined ones
 ADDITIONAL_ARGS=(
-    "-e" "NCCL_DEBUG=trace"
-    "-e" "VLLM_LOGGING_LEVEL=debug"
+    "-e" "NCCL_DEBUG=DEBUG"
+    "-e" "VLLM_LOGGING_LEVEL=DEBUG"
     "-e" "CUDA_LAUNCH_BLOCKING=1"
     "-e" "VLLM_TRACE_FUNCTION=0"
     "-e" "NCCL_P2P_DISABLE=0"
