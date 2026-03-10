@@ -28,13 +28,13 @@ fi
 # Check the docker is running
 DOCKER_ID=$(docker ps -f name="ray-head" -q)
 if [[ -z "${DOCKER_ID}" ]]; then
-    echo "Cannot find Ray cluster head Docker container. Use ./start_vllm_docker.sh to run it"
+    echo "Cannot find Ray cluster head Docker container. Use ./start_docker.sh to run it"
     exit 1
 fi
 
 # Find out how many GPUS are connected
 NUM_GPU=$(docker exec $DOCKER_ID bash -c "ray status | grep "GPU" | tr '/.' ' ' | cut -d' ' -f4"); 
-if [[ -z "${NUM_GPU}" ]] || [[ NUM_GPU -eq 0 ]]; then
+if [[ -z "${NUM_GPU}" ]] || [[ $NUM_GPU -eq 0 ]]; then
     echo "Cannot find any GPUs attached to the cluster. Ray status is:"
     docker exec $DOCKER_ID ray status
     exit 1
@@ -47,11 +47,11 @@ docker exec -it $DOCKER_ID bash /tmp/download_model.sh $MODEL $HF_API_KEY
 # Find out package versions
 VERSIONS=$(docker exec $DOCKER_ID python3 -c "import ray, vllm; print(ray.__version__, '/', vllm.__version__)")
 
-# Build vllm arguments assuming some predefines
-# This assumes that each node has only 1 GPU, more sophisticated logic need if is not so
+# Build vllm arguments
+# This assumes that each node has only 1 GPU
 ADDITIONAL_ARGS=(
     "--distributed-executor-backend" "ray"
-    "--gpu-memory-utilization" "0.9"
+    "--gpu-memory-utilization" "0.8"
     "--port" "8080"
     "--tensor-parallel-size" "1"
     "--pipeline-parallel-size" "${NUM_GPU}"

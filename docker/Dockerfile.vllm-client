@@ -9,7 +9,12 @@ RUN groupadd -g ${RAY_GID} vllm \
 RUN mkdir -p /home/vllm/.cache/huggingface/hub/ && \
   chown -R $RAY_UID:$RAY_GID /home/vllm/.cache/
 
-# RUN pip install -U ray[serve] vllm
-
 USER $RAY_UID
 WORKDIR /home/vllm
+
+ARG SOCKET_IFNAME
+
+# Generate NCCL config and save interface to listen on
+# Without that, config env variable could be overriden by head node
+# resulting to "NCCL Bootstrap : no socket interface found" error
+RUN echo "NCCL_SOCKET_IFNAME=${SOCKET_IFNAME}" > /home/vllm/.nccl.conf
