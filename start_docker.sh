@@ -66,7 +66,7 @@ fi
 
 # Build docker arguments assuming some predefined ones
 ADDITIONAL_ARGS=(
-    "-e" "NCCL_DEBUG=DEBUG"
+    "-e" "NCCL_DEBUG=WARN"
     "-e" "VLLM_LOGGING_LEVEL=DEBUG"
     "-e" "CUDA_LAUNCH_BLOCKING=1"
     "-e" "VLLM_TRACE_FUNCTION=0"
