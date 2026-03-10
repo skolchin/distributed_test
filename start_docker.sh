@@ -66,14 +66,14 @@ fi
 
 # Build docker arguments assuming some predefined ones
 ADDITIONAL_ARGS=(
-    "-e" "NCCL_DEBUG=WARN"
+    "-e" "NCCL_DEBUG=DEBUG"
     "-e" "VLLM_LOGGING_LEVEL=DEBUG"
     "-e" "CUDA_LAUNCH_BLOCKING=1"
     "-e" "VLLM_TRACE_FUNCTION=0"
     "-e" "NCCL_P2P_DISABLE=0"
     "-e" "OMP_NUM_THREADS=2"
     "-e" "GLOO_SOCKET_IFNAME=${HOST_IFNAME}"
-    "-e" "NCCL_SOCKET_IFNAME=${HOST_IFNAME}"
+    # "-e" "NCCL_SOCKET_IFNAME=${HOST_IFNAME}"
     "-e" "RAY_DEDUP_LOGS=0"
 )
 ADDITIONAL_ARGS+=("$@")
@@ -106,7 +106,7 @@ else
 fi
 
 echo "Building docker image $IMAGE_NAME"
-docker build -f $DOCKERFILE --build-arg SOCKET_IFNAME="$HOST_IFNAME" -t $IMAGE_NAME:latest .
+docker build -f $DOCKERFILE --build-arg SOCKET_IFNAME=$HOST_IFNAME -t $IMAGE_NAME:latest .
 
 # Define a cleanup routine that removes the container when the script exits.
 # This prevents orphaned containers from accumulating if the script is interrupted.

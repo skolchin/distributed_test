@@ -2,6 +2,7 @@ FROM vllm/vllm-openai:latest
 
 ARG RAY_UID=1000
 ARG RAY_GID=1000
+ARG SOCKET_IFNAME
 
 RUN groupadd -g ${RAY_GID} vllm \
   && useradd --create-home --no-log-init -u ${RAY_UID} -g ${RAY_GID} vllm
@@ -10,6 +11,11 @@ RUN mkdir -p /home/vllm/.cache/huggingface/hub/ && \
   chown -R $RAY_UID:$RAY_GID /home/vllm/.cache/
 
 RUN pip install -U ray[serve,dashboard] vllm
+
+# Generate NCCL config and save interface to listen on
+# Without that, config env variable could be overriden by head node
+# resulting to "NCCL Bootstrap : no socket interface found" error
+RUN echo "NCCL_SOCKET_IFNAME=${SOCKET_IFNAME}" > /etc/nccl.conf
 
 USER $RAY_UID
 WORKDIR /home/vllm
